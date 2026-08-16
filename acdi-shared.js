@@ -29,7 +29,7 @@ import {
 import { getAcdiApiConfig } from "./acdi-api-config.js";
 
 // ============ HÀM GỌI API AI (độc lập với AI SMART) ============
-async function callAiApi({ endpoint, apiKey, model, messages, maxTokens = 1024 }) {
+async function callAiApi({ endpoint, apiKey, model, messages, maxTokens = 6543 }) {
   const cleanEndpoint = endpoint.trim().replace(/\/$/, "");
   const res = await fetch(`${cleanEndpoint}/chat/completions`, {
     method: "POST",
@@ -393,7 +393,7 @@ CHỈ trả về JSON, không kèm giải thích, không markdown, không dấu 
     const cfg = await getAcdiApiConfig();
     const raw = await callAiApi({
       endpoint: cfg.endpoint, apiKey: cfg.apiKey, model: cfg.model,
-      messages: [{ role: "user", content: prompt }], maxTokens: 1200,
+      messages: [{ role: "user", content: prompt }], maxTokens: 6543,
     });
     const cleaned = String(raw).replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
