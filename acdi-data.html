@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ACDI Check — Dữ liệu khảo sát</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="style.css" />
+<style>
+  .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:20px 0; }
+  .stat-card{ background:var(--card-bg); border:1.5px solid var(--border); border-radius:20px; padding:18px 20px; }
+  .stat-card .num{ font-family:'Fraunces',serif; font-size:26px; font-weight:600; color:var(--orange2); }
+  .stat-card .label{ font-size:11px; color:var(--text-mid); margin-top:4px; }
+  .filter-row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .filter-row select{ padding:9px 12px; border:1.5px solid var(--border); border-radius:12px; font-size:12.5px; font-family:'DM Sans',sans-serif; }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td{ text-align:left; padding:9px 8px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th{ font-size:10.5px; color:var(--text-mid); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+  .pill{ font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:999px; color:#fff; }
+  .table-scroll{ overflow-x:auto; }
+  .export-btn{
+    padding:9px 18px; border:1.5px solid var(--border); border-radius:12px; background:#fff;
+    font-size:12.5px; font-weight:700; color:var(--text-dark); cursor:pointer; display:inline-flex; gap:8px; align-items:center;
+  }
+  .export-btn:hover{ border-color:var(--orange); color:var(--orange2); }
+  .charts-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0; }
+  .charts-grid canvas{ max-height:260px; }
+  @media (max-width:800px){ .stat-grid{ grid-template-columns:repeat(2,1fr); } .charts-grid{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<main class="acdi-wrap" style="max-width:1100px;">
+  <div class="section-label"><i class="fa-solid fa-chart-column"></i> Dữ liệu công khai</div>
+  <h2 class="section-title" style="margin-bottom:4px;">Dữ liệu khảo sát ACDI Check</h2>
+  <p style="font-size:12.5px; color:var(--text-mid); margin-bottom:6px;">Trang này hiển thị số liệu tổng hợp và chi tiết từ mọi lượt khảo sát đã hoàn thành. Dữ liệu hoàn toàn ẩn danh — chỉ có mã tham gia tự sinh, không có tên hay thông tin định danh cá nhân nào.</p>
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="num" id="statCount">-</div><div class="label">Người tham gia</div></div>
+    <div class="stat-card"><div class="num" id="statAvg">-</div><div class="label">ACDI trung bình</div></div>
+    <div class="stat-card"><div class="num" id="statHighRisk">-</div><div class="label">Mức 3–4 (lệ thuộc)</div></div>
+    <div class="stat-card"><div class="num" id="statLowRisk">-</div><div class="label">Mức 1 (kiểm soát tốt)</div></div>
+  </div>
+
+  <div class="card">
+    <h3 class="section-title" style="font-size:15px;">Biểu đồ tổng quan</h3>
+    <div id="chartsEmpty" class="empty-state" style="display:none; text-align:center; padding:20px; color:var(--text-mid); font-size:13px;">Chưa có dữ liệu để vẽ biểu đồ.</div>
+    <div id="chartsGrid" class="charts-grid" style="display:none;">
+      <canvas id="levelChart" height="220"></canvas>
+      <canvas id="radarChart" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px;">
+    <div class="filter-row">
+      <select id="filterLevel">
+        <option value="">Tất cả cấp học</option>
+        <option value="thcs">THCS</option>
+        <option value="thpt">THPT</option>
+      </select>
+      <select id="filterGrade">
+        <option value="">Tất cả khối lớp</option>
+      </select>
+      <button class="export-btn" id="exportBtn"><i class="fa-solid fa-file-csv"></i> Xuất CSV</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Mã tham gia</th><th>Cấp học</th><th>Khối</th><th>Tần suất dùng AI</th><th>Điểm ACDI</th><th>Mức</th><th>Thời gian</th></tr>
+        </thead>
+        <tbody id="rowsBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" style="display:none; text-align:center; padding:30px; color:var(--text-mid); font-size:13px;">Chưa có dữ liệu khảo sát nào.</div>
+    </div>
+  </div>
+</main>
+
+<script src="acdi-nav.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script type="module">
+import { listAssessments, summarizeAssessments, LEVEL_INFO } from "./acdi-shared.js";
+
+renderAcdiNav("data");
+
+const DIM_LABELS = {
+  start: "Bắt đầu nhiệm vụ", idea: "Ý tưởng", process: "Xử lí nhiệm vụ",
+  trust: "Tin vào kết quả AI", independence: "Khả năng độc lập",
+};
+
+let allRows = [];
+let levelChartInst = null;
+let radarChartInst = null;
+
+const filterGradeEl = document.getElementById("filterGrade");
+filterGradeEl.innerHTML = `<option value="">Tất cả khối lớp</option>` +
+  [6, 7, 8, 9, 10, 11, 12].map((g) => `<option value="${g}">Lớp ${g}</option>`).join("");
+
+function levelPillColor(level) {
+  return LEVEL_INFO[level]?.color || "#95a5a6";
+}
+function formatTime(ts) {
+  if (!ts) return "-";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  if (isNaN(d.getTime())) return "-";
+  return d.toLocaleString("vi-VN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function currentFilters() {
+  return {
+    level: document.getElementById("filterLevel").value,
+    grade: document.getElementById("filterGrade").value,
+  };
+}
+
+function filteredRows() {
+  const { level, grade } = currentFilters();
+  return allRows.filter((r) => (!level || r.schoolLevel === level) && (!grade || String(r.grade) === grade));
+}
+
+function renderCharts(rows) {
+  const chartsEmpty = document.getElementById("chartsEmpty");
+  const chartsGrid = document.getElementById("chartsGrid");
+  if (levelChartInst) { levelChartInst.destroy(); levelChartInst = null; }
+  if (radarChartInst) { radarChartInst.destroy(); radarChartInst = null; }
+
+  if (rows.length === 0) {
+    chartsEmpty.style.display = "block";
+    chartsGrid.style.display = "none";
+    return;
+  }
+  chartsEmpty.style.display = "none";
+  chartsGrid.style.display = "grid";
+
+  const s = summarizeAssessments(rows);
+
+  levelChartInst = new Chart(document.getElementById("levelChart"), {
+    type: "bar",
+    data: {
+      labels: [1, 2, 3, 4].map((l) => `Mức ${l}`),
+      datasets: [{
+        label: "Số lượng",
+        data: [1, 2, 3, 4].map((l) => s.levelCounts[l] || 0),
+        backgroundColor: [1, 2, 3, 4].map((l) => LEVEL_INFO[l].color),
+        borderRadius: 8,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false }, title: { display: true, text: "Phân bố theo mức độ ACDI", font: { size: 12 } } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+
+  const dimKeys = Object.keys(DIM_LABELS);
+  radarChartInst = new Chart(document.getElementById("radarChart"), {
+    type: "radar",
+    data: {
+      labels: dimKeys.map((k) => DIM_LABELS[k]),
+      datasets: [{
+        label: "Điểm TB theo nhóm chỉ báo (0-100)",
+        data: dimKeys.map((k) => s.dimAvg[k] || 0),
+        backgroundColor: "rgba(230,126,34,0.18)",
+        borderColor: "#e67e22",
+        pointBackgroundColor: "#e67e22",
+      }],
+    },
+    options: {
+      scales: { r: { min: 0, max: 100, ticks: { display: false }, pointLabels: { font: { size: 10 } } } },
+      plugins: { legend: { display: false }, title: { display: true, text: "Điểm trung bình theo 5 nhóm chỉ báo", font: { size: 12 } } },
+    },
+  });
+}
+
+function renderDashboard() {
+  const rows = filteredRows();
+  document.getElementById("statCount").textContent = rows.length;
+  const avg = rows.length ? (rows.reduce((s, r) => s + (r.acdiScore || 0), 0) / rows.length).toFixed(1) : "-";
+  document.getElementById("statAvg").textContent = avg;
+  document.getElementById("statHighRisk").textContent = rows.filter((r) => r.acdiLevel >= 3).length;
+  document.getElementById("statLowRisk").textContent = rows.filter((r) => r.acdiLevel === 1).length;
+
+  renderCharts(rows);
+
+  const rowsBody = document.getElementById("rowsBody");
+  const emptyState = document.getElementById("emptyState");
+  if (rows.length === 0) {
+    rowsBody.innerHTML = "";
+    emptyState.style.display = "block";
+    return;
+  }
+  emptyState.style.display = "none";
+  const freqLabel = { daily: "Mỗi ngày", often: "Vài lần/tuần", sometimes: "Thỉnh thoảng", rarely: "Hiếm khi" };
+  rowsBody.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${r.participantCode || "-"}</td>
+      <td>${(r.schoolLevel || "-").toUpperCase()}</td>
+      <td>${r.grade || "-"}</td>
+      <td>${freqLabel[r.aiFrequency] || r.aiFrequency || "-"}</td>
+      <td>${r.acdiScore ?? "-"}</td>
+      <td><span class="pill" style="background:${levelPillColor(r.acdiLevel)}">Mức ${r.acdiLevel ?? "-"}</span></td>
+      <td>${formatTime(r.createdAt)}</td>
+    </tr>
+  `).join("");
+}
+
+document.getElementById("filterLevel").addEventListener("change", renderDashboard);
+document.getElementById("filterGrade").addEventListener("change", renderDashboard);
+
+document.getElementById("exportBtn").onclick = () => {
+  const rows = filteredRows().map((r) => ({
+    participantCode: r.participantCode,
+    schoolLevel: r.schoolLevel,
+    grade: r.grade,
+    aiFrequency: r.aiFrequency,
+    acdiScore: r.acdiScore,
+    acdiLevel: r.acdiLevel,
+    createdAt: formatTime(r.createdAt),
+  }));
+  const csv = Papa.unparse(rows);
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `acdi-check-data-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+(async function init() {
+  allRows = await listAssessments();
+  renderDashboard();
+})();
+</script>
+</body>
+</html>
