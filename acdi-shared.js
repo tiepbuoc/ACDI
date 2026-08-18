@@ -242,7 +242,7 @@ function copyOverlapRatio(referenceText, studentText) {
 export function scoreEssayByRubric(scenario, studentText) {
   const text = normalizeText(studentText);
   const wordCount = text ? text.split(" ").filter(Boolean).length : 0;
-  if (wordCount < 6) return 90;
+  if (wordCount < 6) return 94;
 
   const keyPoints = Array.isArray(scenario.keyPoints) ? scenario.keyPoints : [];
   let matchedCount = 0;
@@ -252,15 +252,24 @@ export function scoreEssayByRubric(scenario, studentText) {
   });
   const coverageRatio = keyPoints.length ? matchedCount / keyPoints.length : 0.5;
 
-  let score = 100 - coverageRatio * 75; // đủ ý chính -> điểm nguy cơ giảm mạnh (còn khoảng 25 nền)
+  const overlapWithAi = scenario.aiAnswer ? copyOverlapRatio(scenario.aiAnswer, studentText) : 0;
+
+  // Nền điểm nguy cơ: phủ đủ ý chính -> nền rất thấp (~7), phủ 0 ý chính -> nền gần 100.
+  // Trước đây nền thấp nhất chỉ chạm ~25 dù trả lời xuất sắc — sửa lại để câu trả lời thật sự
+  // đầy đủ, tự diễn đạt, không sao chép vẫn có thể đạt điểm nguy cơ dưới 10 (công bằng cho học
+  // sinh giỏi thực sự, không bị "kẹt trần" ở giữa thang).
+  let score = 100 - coverageRatio * 93;
+
+  // Thưởng thêm khi câu trả lời vừa phủ hết ý chính, vừa đủ dài/chi tiết, vừa không sao chép —
+  // giúp phần thưởng cho sự "tự lập luận" rõ ràng thay vì chỉ khớp từ khoá.
+  if (coverageRatio >= 0.99 && wordCount >= 25 && overlapWithAi < 0.2) score -= 4;
 
   const riskKeywords = Array.isArray(scenario.riskKeywords) ? scenario.riskKeywords : [];
   const riskHits = riskKeywords.filter((kw) => text.includes(normalizeText(kw))).length;
-  score += Math.min(riskHits, 3) * 12; // mỗi cụm từ rủi ro cộng thêm, tối đa cộng 36
+  score += Math.min(riskHits, 3) * 14; // mỗi cụm từ rủi ro cộng thêm, tối đa cộng 42
 
-  if (scenario.aiAnswer) {
-    const overlap = copyOverlapRatio(scenario.aiAnswer, studentText);
-    if (overlap > 0.5) score += (overlap - 0.5) * 60; // chép gần nguyên văn -> cộng thêm nhiều
+  if (scenario.aiAnswer && overlapWithAi > 0.5) {
+    score += (overlapWithAi - 0.5) * 70; // chép gần nguyên văn -> cộng thêm nhiều, đủ vượt 90
   }
 
   return Math.max(0, Math.min(100, Math.round(score)));
@@ -342,27 +351,51 @@ export function buildRecommendation(dimensionScores, groups = DEFAULT_ACDI_GROUP
 // đã được xác định sẵn (rec.highestRiskGroup / rec.bestMaintainedGroup), nếu không sẽ bị lệch với tiêu
 // đề hiển thị (vốn lấy trực tiếp từ rec, không lấy từ AI). Nếu gọi AI lỗi, dùng buildRecommendation()
 // (thuần công thức, không cần mạng) làm phương án dự phòng — xem cách dùng ở acdi-results.html.
-export async function generateFeedbackWithAI({ info, groups, scenarios, answers, scenarioAnswers, perScenario, dimensionScores, acdiScore, level, rec }) {
+// LƯU Ý VỀ CHI PHÍ TOKEN VÀ DỮ LIỆU GỬI CHO AI: hàm này CHỦ Ý không gửi cho AI nội dung đề (câu hỏi,
+// đoạn "aiAnswer" mẫu, hay câu trả lời tự luận gốc của học sinh) — chỉ gửi ĐIỂM SỐ đã chấm xong
+// (theo từng phần, từng nhóm chỉ báo) và một NHÃN ĐỘ PHÙ HỢP tổng quát cho mỗi tình huống tự luận
+// (suy ra từ điểm, không phải văn bản gốc). Việc này vừa giảm đáng kể số token mỗi lần gọi AI, vừa
+// đảm bảo không đưa nội dung đề (vốn được coi là "chìa khoá chấm điểm" cần giữ kín) hay nguyên văn
+// bài làm của học sinh ra ngoài hệ thống chỉ để phục vụ viết nhận xét.
+function essayFitLabel(score) {
+  const s = Number(score);
+  if (!Number.isFinite(s)) return "chưa có dữ liệu";
+  if (s <= 20) return "rất phù hợp, thể hiện khả năng tự lập luận tốt";
+  if (s <= 40) return "khá phù hợp, còn vài chỗ có thể tự lập luận thêm";
+  if (s <= 65) return "có phần hạn chế, còn dựa khá nhiều vào gợi ý sẵn có";
+  if (s <= 85) return "hạn chế rõ, thiếu ý chính/lập luận của riêng mình";
+  return "chưa phù hợp, gần như chưa thể hiện được tư duy độc lập";
+}
+
+function scenarioCategoryLabel(title) {
+  // Chỉ giữ lại TÊN DẠNG tình huống (ví dụ "Phát hiện lỗi trong câu trả lời AI"), bỏ tiền tố
+  // "Tình huống N ·" — đây là tên loại nhiệm vụ, không phải nội dung đề cụ thể.
+  return String(title || "").replace(/^Tình huống\s*\d+\s*[·.\-–]?\s*/i, "").trim() || "Tình huống tự luận";
+}
+
+export async function generateFeedbackWithAI({ info, groups, scenarios, perScenario, dimensionScores, questionnaireScore, scenarioScore, acdiScore, level, rec }) {
   const li = LEVEL_INFO[level];
   // KHÔNG đưa nhãn kỹ thuật kiểu "(key:xxx)" vào đây — nếu có, AI hay chép nguyên xi kiểu nhãn đó vào
   // câu trả lời cho người dùng, trông rất kỹ thuật/khó hiểu với học sinh. Chỉ đưa tên tiếng Việt + điểm.
   const groupSummary = groups.map((g) => `- ${g.title}: điểm ${dimensionScores[g.key]}/100`).join("\n");
-  const scenarioSummary = scenarios.map((sc) => {
-    const ans = scenarioAnswers?.[sc.id];
-    return `- ${sc.title}\n  Câu hỏi: ${sc.question}\n  Câu trả lời học sinh: "${String(ans || "(không trả lời)").slice(0, 400)}"\n  Điểm nguy cơ hệ thống đã chấm: ${perScenario?.[sc.id] ?? "-"}/100`;
+  const scenarioSummary = (scenarios || []).map((sc, i) => {
+    const score = perScenario?.[sc.id];
+    return `- Tình huống ${i + 1} (${scenarioCategoryLabel(sc.title)}): độ phù hợp câu trả lời — ${essayFitLabel(score)} (điểm nguy cơ hệ thống đã chấm: ${score ?? "-"}/100)`;
   }).join("\n");
 
   const prompt = `Bạn là chuyên gia giáo dục, viết NHẬN XÉT và LỜI KHUYÊN cá nhân hoá cho một học sinh vừa
 làm xong bài khảo sát ACDI Check (đo mức độ lệ thuộc nhận thức vào AI trong học tập).
 
 QUAN TRỌNG: điểm số dưới đây ĐÃ ĐƯỢC HỆ THỐNG CHẤM CỐ ĐỊNH XONG, bạn KHÔNG được thay đổi hay bàn luận
-lại về tính đúng/sai của điểm số — nhiệm vụ của bạn CHỈ là viết nhận xét và lời khuyên dựa trên các
-điểm số và câu trả lời thực tế này.
+lại về tính đúng/sai của điểm số. Bạn CŨNG KHÔNG được hỏi lại hay suy đoán về nội dung đề bài/câu trả
+lời cụ thể của học sinh — bạn CHỈ nhận được điểm số và nhãn tổng quát bên dưới, hãy viết nhận xét dựa
+hoàn toàn vào các con số và nhãn đó, không bịa thêm chi tiết nội dung cụ thể nào không có trong dữ liệu.
 
 Thông tin học sinh: cấp học ${info?.schoolLevel === "thpt" ? "THPT" : "THCS"}, khối lớp ${info?.grade}.
 Điểm ACDI tổng: ${acdiScore}/100 — Mức ${level} (${li.title}).
+Điểm thành phần: bảng hỏi tự đánh giá ${Math.round((questionnaireScore ?? 0) * 10) / 10}/100, tình huống tự luận ${Math.round((scenarioScore ?? 0) * 10) / 10}/100.
 
-Điểm 5 nhóm chỉ báo:
+Điểm 5 nhóm chỉ báo (lĩnh vực):
 ${groupSummary}
 
 HỆ THỐNG ĐÃ XÁC ĐỊNH SẴN (bằng công thức, không phải bạn quyết định):
@@ -372,11 +405,12 @@ Bạn BẮT BUỘC phải viết "highestRiskComment" về ĐÚNG nhóm "${rec.h
 ĐÚNG nhóm "${rec.bestMaintainedGroup}" nêu trên — KHÔNG được tự chọn nhóm khác để bàn luận, kể cả khi bạn
 thấy một nhóm khác có vẻ đáng chú ý hơn.
 
-Chi tiết 5 tình huống tự luận và điểm nguy cơ hệ thống đã chấm cho từng câu:
+Độ phù hợp của từng tình huống tự luận (chỉ là nhãn tổng quát suy ra từ điểm, không phải nội dung gốc):
 ${scenarioSummary}
 
 Hãy trả lời CHỈ bằng JSON đúng schema sau, viết bằng tiếng Việt, giọng văn gần gũi, mang tính xây dựng,
-không phán xét, dựa sát vào câu trả lời thực tế của học sinh (không nói chung chung):
+không phán xét, dựa trên các điểm số/nhãn phía trên (không nói chung chung, nhưng cũng không bịa ra chi
+tiết nội dung câu trả lời cụ thể mà bạn không có):
 {
   "highestRiskComment": "1-2 câu nhận xét cụ thể về nhóm \"${rec.highestRiskGroup}\", dựa trên các câu trả lời liên quan",
   "strengthComment": "1-2 câu nhận xét về nhóm \"${rec.bestMaintainedGroup}\"",
@@ -495,7 +529,59 @@ YÊU CẦU BẮT BUỘC — áp dụng GIỐNG NHAU cho MỌI lần soạn đề
    - "riskKeywords": mảng 3-6 cụm từ/từ khoá (chuỗi ngắn) cho thấy dấu hiệu RỦI RO cao khi xuất hiện
      trong câu trả lời của học sinh — ví dụ thể hiện học sinh không tự hiểu, chỉ đoán, dựa hẳn vào AI,
      hoặc trả lời cho có (ví dụ: "không biết", "AI nói vậy", "chắc là đúng", "em không rõ", "copy").
-6. CHỈ trả về JSON hợp lệ đúng schema bên dưới. TUYỆT ĐỐI không kèm giải thích, không markdown,
+6. CÂN BẰNG ĐỘ RỘNG CỦA THANG ĐIỂM — RẤT QUAN TRỌNG: hệ thống chấm điểm tự luận (thuần công thức
+   JS, không dùng AI) tính điểm nguy cơ theo TỈ LỆ số "keyPoints" mà học sinh nhắc trúng. Nếu bạn
+   viết các "keyPoints" quá tổng quát, quá dễ đoán trúng bằng bất kỳ câu trả lời chung chung nào,
+   MỌI học sinh (kể cả học sinh không thực sự hiểu bài) đều sẽ vô tình đạt điểm thấp giả tạo; ngược
+   lại nếu "keyPoints"/"keywords" quá hẹp, quá khó đoán trúng đúng từ, học sinh hiểu bài thật cũng
+   không đạt điểm cao (điểm nguy cơ thấp) được. Để điểm số phản ánh ĐÚNG và CÔNG BẰNG sự đa dạng
+   thực tế của câu trả lời học sinh (bao gồm cả trường hợp học sinh xuất sắc lẫn học sinh gần như
+   không tự làm), khi soạn "keyPoints" và "riskKeywords" hãy:
+   - Chọn keyPoints là những Ý THỰC SỰ CẦN HIỂU BÀI mới nêu được (không phải từ ngữ ai cũng đoán ra).
+   - Với mỗi keyPoint, liệt kê đủ 3-6 từ khoá/đồng nghĩa THƯỜNG GẶP trong cách học sinh diễn đạt
+     (kể cả cách viết tắt, viết sai chính tả nhẹ, từ đồng nghĩa) để không bỏ sót câu trả lời đúng
+     nhưng diễn đạt khác, đồng thời không quá rộng khiến câu trả lời sai cũng khớp được.
+   - riskKeywords nên bao phủ cả cách nói lười biếng/qua loa phổ biến ở lứa tuổi này (ví dụ dạng
+     "không biết", "chắc vậy", "AI nói đúng mà", "khỏi cần kiểm tra") lẫn dấu hiệu sao chép nguyên
+     văn không đổi.
+   Làm đúng như trên thì công thức chấm điểm tự nó đã có thể cho ra điểm trải dài toàn thang 0-100
+   tuỳ chất lượng câu trả lời thực tế — kể cả các trường hợp cực trị (dưới 10 với câu trả lời xuất
+   sắc, tự lập luận đầy đủ; trên 90 với câu trả lời hời hợt/sao chép) — bạn KHÔNG cần và KHÔNG được
+   tự ý "nới lỏng" hay "siết chặt" giả tạo để cố tạo ra điểm cực trị; chỉ cần rubric phản ánh đúng
+   thực chất là công thức sẽ tự cho kết quả công bằng.
+
+7. VÍ DỤ MẪU (chỉ để bạn tham khảo văn phong, độ chi tiết và cách soạn rubric — KHÔNG được chép lại
+   nguyên văn nội dung ví dụ này vào đề bạn soạn, phải tự viết nội dung mới phù hợp với cấp học/khối
+   lớp/môn học đã cho ở trên):
+
+   Ví dụ 1 nhóm chỉ báo (nhóm "start"):
+   {
+     "key": "start", "title": "Phụ thuộc khi bắt đầu nhiệm vụ",
+     "desc": "Mức độ em cần AI để xác định cách làm hoặc khởi động một nhiệm vụ.",
+     "questions": [
+       { "id": "g1q1", "text": "Khi nhận một bài tập Hoá mới, em thường mở AI hỏi cách làm trước khi tự đọc kỹ đề.", "reverse": false },
+       { "id": "g1q2", "text": "Em khó hình dung nên bắt đầu từ đâu nếu chưa có AI gợi ý hướng làm.", "reverse": false },
+       { "id": "g1q3", "text": "Em thường chờ AI đưa ra các bước giải trước rồi mới bắt tay vào làm theo.", "reverse": false },
+       { "id": "g1q4", "text": "Em cảm thấy khá lo lắng nếu phải tự mở đầu một bài tập mà không có AI hỗ trợ.", "reverse": false },
+       { "id": "g1q5", "text": "Em ít khi dành thời gian đọc kỹ đề bài trước khi mở công cụ AI ra hỏi.", "reverse": false }
+     ]
+   }
+
+   Ví dụ 1 tình huống tự luận (dạng s1 — phát hiện lỗi):
+   {
+     "id": "s1", "title": "Tình huống 1 · Phát hiện lỗi trong câu trả lời AI",
+     "prompt": "AI trả lời câu hỏi \\"Tính nồng độ mol của dung dịch chứa 0,5 mol NaCl trong 2 lít nước\\" như sau:",
+     "aiAnswer": "\\"Nồng độ mol là 0,5 x 2 = 1 mol/l.\\"",
+     "question": "Câu trả lời trên có lỗi gì? Hãy chỉ ra lỗi và tính lại cho đúng bằng lời của em.",
+     "type": "text",
+     "keyPoints": [
+       { "label": "Chỉ ra phép tính sai (phải chia, không phải nhân)", "keywords": ["chia", "phép chia", "không phải nhân", "0,5 chia 2", "0.5 chia 2"] },
+       { "label": "Đưa ra đáp số đúng 0,25 mol/l", "keywords": ["0,25", "0.25"] }
+     ],
+     "riskKeywords": ["không biết", "em không rõ", "chắc là đúng", "ai nói vậy", "đúng rồi", "không có lỗi"]
+   }
+
+8. CHỈ trả về JSON hợp lệ đúng schema bên dưới. TUYỆT ĐỐI không kèm giải thích, không markdown,
    không dấu backtick, không có chữ nào ngoài JSON.
 
 SCHEMA JSON:
@@ -616,6 +702,110 @@ export async function saveAssessment(data) {
 export async function listAssessments() {
   const snap = await getDocs(query(collection(db, "assessments"), orderBy("createdAt", "desc")));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// ============ 9. HỆ THỐNG KEY TRUY CẬP TRANG DỮ LIỆU (chỉ nhóm nghiên cứu) ============
+// Trang acdi-data.html giờ yêu cầu một "key" hợp lệ mới xem được (thay vì công khai hoàn toàn).
+// Key được quản trị viên tạo ở trang admin.html (ẩn, vào bằng mật khẩu tĩnh, không có tài khoản).
+// Mỗi key giới hạn số lượng TRÌNH DUYỆT (thiết bị) được phép dùng — trình duyệt đầu tiên nhập key
+// sẽ được "gắn" vào key đó (ghi nhận deviceId), tới khi đủ số lượng cho phép thì trình duyệt mới
+// không nhập được nữa. Quản trị viên có thể đổi số lượng thiết bị tối đa / hạn dùng bất cứ lúc nào.
+// Lưu tại Firestore: acdiAccessKeys/{keyCode}
+//   { name, keyCode, maxDevices, deviceIds: string[], expiresAt: ISO string | null, createdAt }
+
+const KEY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export function generateKeyCode(len = 10) {
+  let out = "";
+  for (let i = 0; i < len; i++) out += KEY_CHARS[Math.floor(Math.random() * KEY_CHARS.length)];
+  return out;
+}
+
+// Định danh trình duyệt: 1 chuỗi ngẫu nhiên sinh ra 1 lần, lưu vĩnh viễn trong localStorage của
+// trình duyệt đó. Đây KHÔNG phải định danh cá nhân — chỉ là mã kỹ thuật của trình duyệt/máy để
+// đếm số "chỗ" đã dùng của 1 key, tương tự cách participantCode ẩn danh hoá người làm khảo sát.
+export function getOrCreateDeviceId() {
+  let id = null;
+  try { id = localStorage.getItem("acdi_device_id"); } catch { id = null; }
+  if (!id) {
+    id = "dev_" + Array.from({ length: 20 }, () => KEY_CHARS[Math.floor(Math.random() * KEY_CHARS.length)]).join("");
+    try { localStorage.setItem("acdi_device_id", id); } catch { /* ignore */ }
+  }
+  return id;
+}
+
+// Tạo key mới (dùng ở trang admin). expiresAt: chuỗi "YYYY-MM-DD" hoặc null (không hết hạn).
+export async function createAccessKey({ name, maxDevices, expiresAt }) {
+  const keyCode = generateKeyCode();
+  await setDoc(doc(db, "acdiAccessKeys", keyCode), {
+    name: name || "",
+    keyCode,
+    maxDevices: Math.max(1, Number(maxDevices) || 1),
+    deviceIds: [],
+    expiresAt: expiresAt || null,
+    createdAt: serverTimestamp(),
+  });
+  return keyCode;
+}
+
+// Sửa số lượng thiết bị tối đa và/hoặc hạn dùng của 1 key đã tạo (không đổi được keyCode/deviceIds).
+export async function updateAccessKey(keyCode, { maxDevices, expiresAt }) {
+  const patch = {};
+  if (maxDevices !== undefined) patch.maxDevices = Math.max(1, Number(maxDevices) || 1);
+  if (expiresAt !== undefined) patch.expiresAt = expiresAt || null;
+  await setDoc(doc(db, "acdiAccessKeys", keyCode), patch, { merge: true });
+}
+
+// Xoá hẳn 1 key (thu hồi quyền truy cập ngay lập tức cho mọi thiết bị đang dùng key đó).
+export async function deleteAccessKey(keyCode) {
+  await setDoc(doc(db, "acdiAccessKeys", keyCode), { revoked: true, deviceIds: [], maxDevices: 0 }, { merge: true });
+}
+
+// Danh sách toàn bộ key (dùng ở trang admin).
+export async function listAccessKeys() {
+  const snap = await getDocs(query(collection(db, "acdiAccessKeys"), orderBy("createdAt", "desc")));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// Kiểm tra + đăng ký thiết bị hiện tại vào 1 key. Trả về { ok: true } nếu hợp lệ (và ghi nhận thiết
+// bị nếu là lần đầu dùng key này); trả về { ok: false, reason } nếu sai key / hết hạn / hết chỗ.
+export async function validateAndRegisterKey(rawKeyCode) {
+  const keyCode = String(rawKeyCode || "").trim().toUpperCase();
+  if (!keyCode) return { ok: false, reason: "empty" };
+
+  const ref = doc(db, "acdiAccessKeys", keyCode);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return { ok: false, reason: "not_found" };
+
+  const data = snap.data();
+  if (data.revoked) return { ok: false, reason: "revoked" };
+  if (data.expiresAt) {
+    const exp = new Date(data.expiresAt + "T23:59:59");
+    if (!isNaN(exp.getTime()) && Date.now() > exp.getTime()) return { ok: false, reason: "expired" };
+  }
+
+  const deviceId = getOrCreateDeviceId();
+  const deviceIds = Array.isArray(data.deviceIds) ? data.deviceIds : [];
+  if (deviceIds.includes(deviceId)) return { ok: true, keyCode }; // thiết bị này đã từng dùng key -> luôn cho vào lại
+
+  const maxDevices = Number(data.maxDevices) || 0;
+  if (deviceIds.length >= maxDevices) return { ok: false, reason: "device_limit" };
+
+  try {
+    await setDoc(ref, { deviceIds: [...deviceIds, deviceId] }, { merge: true });
+  } catch (err) {
+    console.warn("Không ghi nhận được thiết bị mới cho key:", err);
+  }
+  return { ok: true, keyCode };
+}
+
+// Trang acdi-data.html gọi hàm này khi tải trang để kiểm tra xem trình duyệt hiện tại đã có
+// key hợp lệ lưu từ trước hay chưa (không bắt nhập lại key mỗi lần vào trang).
+export async function checkStoredKeyStillValid() {
+  let stored = null;
+  try { stored = localStorage.getItem("acdi_data_key"); } catch { stored = null; }
+  if (!stored) return false;
+  const res = await validateAndRegisterKey(stored);
+  return !!res.ok;
 }
 
 // Gộp số liệu thống kê hiển thị (đếm, điểm trung bình, phân bố mức, điểm TB từng nhóm chỉ báo).

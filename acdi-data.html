@@ -26,14 +26,33 @@
   .charts-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0; }
   .charts-grid canvas{ max-height:260px; }
   @media (max-width:800px){ .stat-grid{ grid-template-columns:repeat(2,1fr); } .charts-grid{ grid-template-columns:1fr; } }
+
+  .key-gate-wrap{ max-width:420px; margin:60px auto; text-align:center; }
+  .key-gate-wrap i.fa-lock{ font-size:26px; color:var(--orange2); margin-bottom:14px; display:block; }
+  .key-gate-wrap input{
+    width:100%; padding:12px 14px; border:1.5px solid var(--border); border-radius:14px;
+    font-size:14px; letter-spacing:1.5px; text-align:center; text-transform:uppercase;
+    font-family:'DM Sans',sans-serif; margin-top:16px;
+  }
+  .key-gate-wrap .key-msg{ font-size:12.5px; color:var(--red); min-height:16px; margin-top:10px; }
+  .key-gate-wrap button{ margin-top:14px; width:100%; }
 </style>
 </head>
 <body>
 
-<main class="acdi-wrap" style="max-width:1100px;">
-  <div class="section-label"><i class="fa-solid fa-chart-column"></i> Dữ liệu công khai</div>
+<div id="keyGate" class="card key-gate-wrap">
+  <i class="fa-solid fa-lock"></i>
+  <h2 class="section-title" style="font-size:16px;">Trang dữ liệu dành riêng cho nhóm nghiên cứu</h2>
+  <p style="font-size:12.5px; color:var(--text-mid);">Nhập mã truy cập đã được nhóm nghiên cứu cấp để xem dữ liệu khảo sát.</p>
+  <input type="text" id="keyInput" placeholder="Nhập mã truy cập" maxlength="12" />
+  <div class="key-msg" id="keyMsg"></div>
+  <button class="acdi-btn-primary" id="keySubmitBtn" style="width:100%;">Xác nhận</button>
+</div>
+
+<main class="acdi-wrap" style="max-width:1100px; display:none;" id="dataMain">
+  <div class="section-label"><i class="fa-solid fa-chart-column"></i> Dữ liệu nội bộ</div>
   <h2 class="section-title" style="margin-bottom:4px;">Dữ liệu khảo sát ACDI Check</h2>
-  <p style="font-size:12.5px; color:var(--text-mid); margin-bottom:6px;">Trang này hiển thị số liệu tổng hợp và chi tiết từ mọi lượt khảo sát đã hoàn thành. Dữ liệu hoàn toàn ẩn danh — chỉ có mã tham gia tự sinh, không có tên hay thông tin định danh cá nhân nào.</p>
+  <p style="font-size:12.5px; color:var(--text-mid); margin-bottom:6px;">Trang này hiển thị số liệu tổng hợp và chi tiết từ mọi lượt khảo sát đã hoàn thành. Dữ liệu hoàn toàn ẩn danh — chỉ có mã tham gia tự sinh, không có tên hay thông tin định danh cá nhân nào. Trang chỉ dành cho nhóm nghiên cứu, không công khai.</p>
 
   <div class="stat-grid">
     <div class="stat-card"><div class="num" id="statCount">-</div><div class="label">Người tham gia</div></div>
@@ -79,9 +98,56 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script type="module">
-import { listAssessments, summarizeAssessments, LEVEL_INFO } from "./acdi-shared.js";
+import { listAssessments, summarizeAssessments, LEVEL_INFO, checkStoredKeyStillValid, validateAndRegisterKey } from "./acdi-shared.js";
 
-renderAcdiNav("data");
+const keyGate = document.getElementById("keyGate");
+const dataMain = document.getElementById("dataMain");
+const keyInput = document.getElementById("keyInput");
+const keyMsg = document.getElementById("keyMsg");
+const keySubmitBtn = document.getElementById("keySubmitBtn");
+
+function unlockDataPage() {
+  keyGate.style.display = "none";
+  dataMain.style.display = "block";
+  renderAcdiNav("data");
+  initDataPage();
+}
+
+async function tryKey(code) {
+  keyMsg.style.color = "var(--red)";
+  keyMsg.textContent = "Đang kiểm tra...";
+  keySubmitBtn.disabled = true;
+  try {
+    const res = await validateAndRegisterKey(code);
+    if (res.ok) {
+      try { localStorage.setItem("acdi_data_key", res.keyCode); } catch { /* ignore */ }
+      unlockDataPage();
+      return;
+    }
+    const reasonText = {
+      not_found: "Mã truy cập không tồn tại.",
+      revoked: "Mã truy cập đã bị thu hồi.",
+      expired: "Mã truy cập đã hết hạn.",
+      device_limit: "Mã truy cập đã đạt giới hạn số trình duyệt được phép dùng.",
+      empty: "Vui lòng nhập mã truy cập.",
+    };
+    keyMsg.textContent = reasonText[res.reason] || "Mã truy cập không hợp lệ.";
+  } catch (err) {
+    console.warn("Lỗi kiểm tra mã truy cập:", err);
+    keyMsg.textContent = "Có lỗi khi kiểm tra mã, vui lòng thử lại.";
+  } finally {
+    keySubmitBtn.disabled = false;
+  }
+}
+
+keySubmitBtn.onclick = () => tryKey(keyInput.value);
+keyInput.addEventListener("keydown", (e) => { if (e.key === "Enter") tryKey(keyInput.value); });
+
+(async function initGate() {
+  const stillValid = await checkStoredKeyStillValid().catch(() => false);
+  if (stillValid) { unlockDataPage(); return; }
+  keyGate.style.display = "block";
+})();
 
 const DIM_LABELS = {
   start: "Bắt đầu nhiệm vụ", idea: "Ý tưởng", process: "Xử lí nhiệm vụ",
@@ -226,10 +292,10 @@ document.getElementById("exportBtn").onclick = () => {
   URL.revokeObjectURL(url);
 };
 
-(async function init() {
+async function initDataPage() {
   allRows = await listAssessments();
   renderDashboard();
-})();
+}
 </script>
 </body>
 </html>
