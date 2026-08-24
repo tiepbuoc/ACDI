@@ -48,7 +48,7 @@ a{ color:var(--orange); }
   border-radius:11px;
   display:flex; align-items:center; justify-content:center;
   font-size:17px; color:#fff;
-  box-shadow:0 0 20px rgba(230,126,34,0.25);
+  box-shadow:0 0 20px rgba(22,163,74,0.25);
 }
 .logo-type{ font-size:20px; font-weight:700; letter-spacing:-0.5px; }
 .logo-ai{ color:var(--orange); font-weight:800; }
@@ -72,7 +72,7 @@ a{ color:var(--orange); }
   display:flex; align-items:center; gap:8px; font-family:'Be Vietnam Pro',sans-serif;
   transition:all .25s;
 }
-.nav-pill-btn:hover{ transform:translateY(-2px); box-shadow:0 6px 18px rgba(230,126,34,0.35); }
+.nav-pill-btn:hover{ transform:translateY(-2px); box-shadow:0 6px 18px rgba(22,163,74,0.35); }
 
 .menu-toggle{
   display:none; background:transparent; border:1px solid var(--border); border-radius:30px;
@@ -113,7 +113,7 @@ a{ color:var(--orange); }
   display:flex; align-items:center; justify-content:center; padding:24px;
   background:
     radial-gradient(circle at 15% 15%, var(--orange-pale), transparent 40%),
-    radial-gradient(circle at 85% 85%, rgba(243,156,18,0.06), transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(22,163,74,0.06), transparent 40%),
     var(--bg);
 }
 .auth-card{
@@ -139,9 +139,9 @@ a{ color:var(--orange); }
   width:100%; padding:13px 0; border:none; border-radius:14px;
   background:linear-gradient(135deg,var(--orange2),var(--orange)); color:#fff;
   font-size:14.5px; font-weight:600; cursor:pointer; font-family:'Be Vietnam Pro',sans-serif;
-  box-shadow:0 6px 20px rgba(230,126,34,0.3); transition:all .25s;
+  box-shadow:0 6px 20px rgba(22,163,74,0.3); transition:all .25s;
 }
-.primary-btn:hover{ transform:translateY(-2px); box-shadow:0 10px 26px rgba(230,126,34,0.4); }
+.primary-btn:hover{ transform:translateY(-2px); box-shadow:0 10px 26px rgba(22,163,74,0.4); }
 
 .auth-message{ margin-top:10px; font-size:12.5px; color:var(--red); min-height:16px; line-height:1.4; }
 
@@ -200,9 +200,9 @@ a{ color:var(--orange); }
   display:inline-flex; align-items:center; gap:10px; margin-top:22px;
   background:linear-gradient(135deg,var(--orange2),var(--orange)); color:#fff; text-decoration:none;
   padding:13px 26px; border-radius:16px; font-weight:600; font-size:14px;
-  box-shadow:0 8px 22px rgba(230,126,34,0.3); transition:all .25s;
+  box-shadow:0 8px 22px rgba(22,163,74,0.3); transition:all .25s;
 }
-.download-ext-btn:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(230,126,34,0.4); }
+.download-ext-btn:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(22,163,74,0.4); }
 .download-ext-btn i{ font-size:16px; }
 
 /* ══════════ Khối "Kiểm soát AI đúng cách" — 5 bước sinh động ══════════ */
@@ -233,7 +233,7 @@ a{ color:var(--orange); }
   width:68px; height:68px; border-radius:50%; margin:0 auto 14px; position:relative; z-index:1;
   display:flex; align-items:center; justify-content:center; font-size:24px; color:#fff;
   background:linear-gradient(135deg,var(--step-color-2,var(--orange2)),var(--step-color-1,var(--orange)));
-  box-shadow:0 8px 20px var(--step-shadow, rgba(230,126,34,0.3));
+  box-shadow:0 8px 20px var(--step-shadow, rgba(22,163,74,0.3));
   transition:transform .25s;
 }
 .step-node:hover .step-circle{ transform:scale(1.1) translateY(-4px); }
@@ -279,7 +279,7 @@ a{ color:var(--orange); }
 .acdi-btn-primary{
   padding:12px 26px; border:none; border-radius:14px; background:linear-gradient(135deg,var(--orange2),var(--orange));
   color:#fff; font-weight:700; font-size:13.5px; cursor:pointer; font-family:'Be Vietnam Pro',sans-serif;
-  box-shadow:0 6px 18px rgba(230,126,34,0.3);
+  box-shadow:0 6px 18px rgba(22,163,74,0.3);
 }
 .acdi-btn-primary:hover{ transform:translateY(-2px); }
 .acdi-btn-primary:disabled{ opacity:.5; cursor:not-allowed; transform:none; }
