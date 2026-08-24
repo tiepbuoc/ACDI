@@ -84,6 +84,14 @@
   .add-kp-btn{ font-size:11.5px; font-weight:700; color:var(--orange2); background:none; border:none; cursor:pointer; padding:4px 0; }
 
   .bank-overview-table td, .bank-overview-table th{ font-size:12px; }
+
+  .genall-card{ margin-top:18px; }
+  .genall-progress{
+    display:none; margin-top:12px; max-height:220px; overflow-y:auto;
+    border:1.5px solid var(--border); border-radius:12px; padding:10px 12px;
+    font-size:12px; font-family:monospace; background:#fafafa;
+  }
+  .genall-progress div{ padding:2px 0; }
 </style>
 </head>
 <body>
@@ -186,6 +194,15 @@
       <div style="margin:18px 0; text-align:right;">
         <button class="acdi-btn-primary" id="saveBankBtn">Lưu đề vào ngân hàng</button>
       </div>
+    </div>
+
+    <div class="card genall-card">
+      <h3 class="section-title" style="font-size:14px;">Tạo toàn bộ đề còn thiếu</h3>
+      <p style="font-size:12.5px; color:var(--text-mid); margin-bottom:12px;">
+        Quét tất cả khối lớp (6–9 THCS, 10–12 THPT) × tất cả môn, tự động gọi AI soạn đề cho những đề chưa có, lưu vào ngân hàng. Nếu lỗi sẽ tự thử lại rồi bỏ qua và tiếp tục đề kế tiếp.
+      </p>
+      <button class="acdi-btn-secondary" id="genAllMissingBtn"><i class="fa-solid fa-bolt"></i> Tạo toàn bộ đề còn thiếu (AI)</button>
+      <div id="genAllProgress" class="genall-progress"></div>
     </div>
 
     <div class="card" style="margin-top:18px;">
@@ -572,6 +589,101 @@ async function loadBankOverview() {
     </tr>
   `).join("");
 }
+
+// ============ Tạo toàn bộ đề còn thiếu ============
+const genAllMissingBtn = document.getElementById("genAllMissingBtn");
+const genAllProgress = document.getElementById("genAllProgress");
+let genAllRunning = false;
+let genAllStopRequested = false;
+
+function allGradeSubjectCombos() {
+  const combos = [];
+  for (const level of ["thcs", "thpt"]) {
+    for (const g of gradesFor(level)) {
+      for (const subj of SUBJECT_KEYS) {
+        combos.push({ schoolLevel: level, grade: g, subject: subj });
+      }
+    }
+  }
+  return combos;
+}
+
+function logProgress(msg, color) {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  if (color) line.style.color = color;
+  genAllProgress.appendChild(line);
+  genAllProgress.scrollTop = genAllProgress.scrollHeight;
+}
+
+async function generateAllMissing() {
+  if (genAllRunning) return;
+  genAllRunning = true;
+  genAllStopRequested = false;
+  genAllMissingBtn.textContent = "Đang tạo... (bấm để dừng)";
+  genAllProgress.innerHTML = "";
+  genAllProgress.style.display = "block";
+
+  const combos = allGradeSubjectCombos();
+  const existingMeta = await listTestBankMeta().catch(() => []);
+  const existingSet = new Set(existingMeta.map((m) => `${m.grade}__${m.subject}`));
+  const missing = combos.filter((c) => !existingSet.has(`${c.grade}__${c.subject}`));
+
+  if (missing.length === 0) {
+    logProgress("Tất cả các đề đã đầy đủ, không có đề nào thiếu.", "var(--green)");
+  } else {
+    logProgress(`Tìm thấy ${missing.length} đề còn thiếu. Bắt đầu tạo...`, "var(--text-mid)");
+  }
+
+  let doneCount = 0;
+  let failCount = 0;
+
+  for (const combo of missing) {
+    if (genAllStopRequested) {
+      logProgress("Đã dừng theo yêu cầu.", "var(--red)");
+      break;
+    }
+    const label = `Lớp ${combo.grade} - ${SUBJECT_LABELS[combo.subject]}`;
+    let attempt = 0;
+    let success = false;
+    while (!success && attempt < 3 && !genAllStopRequested) {
+      attempt++;
+      logProgress(`${label}: đang soạn (lần ${attempt})...`, "var(--text-mid)");
+      try {
+        const generated = await generateSubjectTestWithAI(combo);
+        if (!validateGeneratedTest(generated)) {
+          throw new Error("Đề do AI tạo không hợp lệ (thiếu câu hỏi/tình huống).");
+        }
+        await saveTestBank(combo.grade, combo.subject, { ...generated, source: "ai" });
+        logProgress(`${label}: đã lưu thành công.`, "var(--green)");
+        success = true;
+        doneCount++;
+      } catch (err) {
+        console.warn(`Lỗi khi tạo đề ${label}:`, err);
+        logProgress(`${label}: lỗi (${err?.message || err}) — sẽ thử lại.`, "var(--red)");
+      }
+    }
+    if (!success && !genAllStopRequested) {
+      failCount++;
+      logProgress(`${label}: bỏ qua sau 3 lần thử thất bại.`, "var(--red)");
+    }
+    loadBankOverview();
+  }
+
+  genAllRunning = false;
+  genAllMissingBtn.textContent = "Tạo toàn bộ đề còn thiếu (AI)";
+  logProgress(`Hoàn tất: ${doneCount} đề đã tạo, ${failCount} đề thất bại.`, "var(--text-mid)");
+  loadBankOverview();
+}
+
+genAllMissingBtn.onclick = () => {
+  if (genAllRunning) {
+    genAllStopRequested = true;
+    logProgress("Đang dừng sau khi hoàn tất đề hiện tại...", "var(--text-mid)");
+    return;
+  }
+  generateAllMissing();
+};
 
 function initBankTab() {
   loadCurrentBank();
