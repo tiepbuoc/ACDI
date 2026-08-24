@@ -9,10 +9,10 @@
 <style>
   .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:20px 0; }
   .stat-card{ background:var(--card-bg); border:1.5px solid var(--border); border-radius:20px; padding:18px 20px; }
-  .stat-card .num{ font-family:'Fraunces',serif; font-size:26px; font-weight:600; color:var(--orange2); }
+  .stat-card .num{ font-family:'Lora',serif; font-size:26px; font-weight:600; color:var(--orange2); }
   .stat-card .label{ font-size:11px; color:var(--text-mid); margin-top:4px; }
   .filter-row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
-  .filter-row select{ padding:9px 12px; border:1.5px solid var(--border); border-radius:12px; font-size:12.5px; font-family:'DM Sans',sans-serif; }
+  .filter-row select{ padding:9px 12px; border:1.5px solid var(--border); border-radius:12px; font-size:12.5px; font-family:'Be Vietnam Pro',sans-serif; }
   table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   th,td{ text-align:left; padding:9px 8px; border-bottom:1px solid var(--border); white-space:nowrap; }
   th{ font-size:10.5px; color:var(--text-mid); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
@@ -32,7 +32,7 @@
   .key-gate-wrap input{
     width:100%; padding:12px 14px; border:1.5px solid var(--border); border-radius:14px;
     font-size:14px; letter-spacing:1.5px; text-align:center; text-transform:uppercase;
-    font-family:'DM Sans',sans-serif; margin-top:16px;
+    font-family:'Be Vietnam Pro',sans-serif; margin-top:16px;
   }
   .key-gate-wrap .key-msg{ font-size:12.5px; color:var(--red); min-height:16px; margin-top:10px; }
   .key-gate-wrap button{ margin-top:14px; width:100%; }
@@ -63,7 +63,6 @@
 
   <div class="card">
     <h3 class="section-title" style="font-size:15px;">Biểu đồ tổng quan</h3>
-    <div id="chartsEmpty" class="empty-state" style="display:none; text-align:center; padding:20px; color:var(--text-mid); font-size:13px;">Chưa có dữ liệu để vẽ biểu đồ.</div>
     <div id="chartsGrid" class="charts-grid" style="display:none;">
       <canvas id="levelChart" height="220"></canvas>
       <canvas id="radarChart" height="220"></canvas>
@@ -185,20 +184,14 @@ function filteredRows() {
 }
 
 function renderCharts(rows) {
-  const chartsEmpty = document.getElementById("chartsEmpty");
   const chartsGrid = document.getElementById("chartsGrid");
   if (levelChartInst) { levelChartInst.destroy(); levelChartInst = null; }
   if (radarChartInst) { radarChartInst.destroy(); radarChartInst = null; }
 
-  if (rows.length === 0) {
-    chartsEmpty.style.display = "block";
-    chartsGrid.style.display = "none";
-    return;
-  }
-  chartsEmpty.style.display = "none";
+  // Luôn hiển thị đủ 2 biểu đồ (kể cả khi chưa có dữ liệu — biểu đồ sẽ hiện ở trạng thái rỗng).
   chartsGrid.style.display = "grid";
 
-  const s = summarizeAssessments(rows);
+  const s = rows.length ? summarizeAssessments(rows) : { levelCounts: {}, dimAvg: {} };
 
   levelChartInst = new Chart(document.getElementById("levelChart"), {
     type: "bar",
@@ -212,6 +205,7 @@ function renderCharts(rows) {
       }],
     },
     options: {
+      animation: false,
       plugins: { legend: { display: false }, title: { display: true, text: "Phân bố theo mức độ ACDI", font: { size: 12 } } },
       scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
     },
@@ -225,12 +219,13 @@ function renderCharts(rows) {
       datasets: [{
         label: "Điểm TB theo nhóm chỉ báo (0-100)",
         data: dimKeys.map((k) => s.dimAvg[k] || 0),
-        backgroundColor: "rgba(230,126,34,0.18)",
-        borderColor: "#e67e22",
-        pointBackgroundColor: "#e67e22",
+        backgroundColor: "rgba(22,163,74,0.18)",
+        borderColor: "#16a34a",
+        pointBackgroundColor: "#16a34a",
       }],
     },
     options: {
+      animation: false,
       scales: { r: { min: 0, max: 100, ticks: { display: false }, pointLabels: { font: { size: 10 } } } },
       plugins: { legend: { display: false }, title: { display: true, text: "Điểm trung bình theo 5 nhóm chỉ báo", font: { size: 12 } } },
     },

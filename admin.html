@@ -12,7 +12,7 @@
   .login-wrap i.fa-user-shield{ font-size:26px; color:var(--orange2); margin-bottom:14px; display:block; }
   .login-wrap input{
     width:100%; padding:12px 14px; border:1.5px solid var(--border); border-radius:14px;
-    font-size:14px; font-family:'DM Sans',sans-serif; margin-top:16px; text-align:center;
+    font-size:14px; font-family:'Be Vietnam Pro',sans-serif; margin-top:16px; text-align:center;
   }
   .login-wrap .login-msg{ font-size:12.5px; color:var(--red); min-height:16px; margin-top:10px; }
   .login-wrap button{ margin-top:14px; width:100%; }
@@ -22,7 +22,7 @@
   .create-form label{ font-size:11px; font-weight:700; color:var(--text-mid); display:block; margin-bottom:5px; }
   .create-form input{
     width:100%; padding:10px 12px; border:1.5px solid var(--border); border-radius:12px;
-    font-size:13px; font-family:'DM Sans',sans-serif;
+    font-size:13px; font-family:'Be Vietnam Pro',sans-serif;
   }
   @media (max-width:720px){ .create-form{ grid-template-columns:1fr; } }
 
@@ -53,7 +53,7 @@
   .bank-select-row label{ font-size:11px; font-weight:700; color:var(--text-mid); display:block; margin-bottom:5px; }
   .bank-select-row select{
     padding:10px 12px; border:1.5px solid var(--border); border-radius:12px; font-size:13px;
-    font-family:'DM Sans',sans-serif; background:#fff; min-width:150px;
+    font-family:'Be Vietnam Pro',sans-serif; background:#fff; min-width:150px;
   }
   .bank-status-badge{ font-size:11px; font-weight:700; padding:4px 12px; border-radius:999px; }
   .bank-status-badge.has-bank{ background:var(--green-pale); color:var(--green); }
@@ -65,7 +65,7 @@
   .edit-q-row{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
   .edit-q-row textarea{
     flex:1; padding:8px 10px; border:1.5px solid var(--border); border-radius:10px; font-size:12.5px;
-    font-family:'DM Sans',sans-serif; resize:vertical; min-height:38px;
+    font-family:'Be Vietnam Pro',sans-serif; resize:vertical; min-height:38px;
   }
   .edit-q-row label{ font-size:10.5px; color:var(--text-mid); display:flex; align-items:center; gap:4px; white-space:nowrap; }
 
@@ -74,7 +74,7 @@
   .edit-sc-card .f-label:first-child{ margin-top:0; }
   .edit-sc-card input[type=text], .edit-sc-card textarea{
     width:100%; padding:8px 10px; border:1.5px solid var(--border); border-radius:10px; font-size:12.5px;
-    font-family:'DM Sans',sans-serif; resize:vertical;
+    font-family:'Be Vietnam Pro',sans-serif; resize:vertical;
   }
   .kp-row{ display:flex; gap:6px; margin-bottom:6px; }
   .kp-row input{ padding:7px 9px; border:1.5px solid var(--border); border-radius:8px; font-size:12px; }
@@ -209,7 +209,7 @@
       <h3 class="section-title" style="font-size:14px;">Tổng quan ngân hàng đề đã có</h3>
       <div class="table-scroll" style="overflow-x:auto;">
         <table class="bank-overview-table">
-          <thead><tr><th>Khối lớp</th><th>Môn</th><th>Số câu TN</th><th>Số tình huống</th><th>Nguồn</th><th>Cập nhật</th></tr></thead>
+          <thead><tr><th>Khối lớp</th><th>Môn</th><th>Số câu TN</th><th>Số tình huống</th><th>Cập nhật</th></tr></thead>
           <tbody id="bankOverviewBody"></tbody>
         </table>
         <div id="bankOverviewEmpty" style="display:none; text-align:center; padding:20px; color:var(--text-mid); font-size:13px;">Ngân hàng đề chưa có dữ liệu nào.</div>
@@ -497,7 +497,7 @@ async function loadCurrentBank() {
   if (!grade || !subject) return;
   const bank = await getTestBank(grade, subject);
   if (bank) {
-    bankStatusBadge.textContent = `Đã có đề (${bank.source === "ai" ? "AI soạn" : "nhập tay"})`;
+    bankStatusBadge.textContent = "Đã có đề";
     bankStatusBadge.className = "bank-status-badge has-bank";
     showEditForm(bank.groups, bank.scenarios);
   } else {
@@ -584,7 +584,6 @@ async function loadBankOverview() {
       <td>${SUBJECT_LABELS[m.subject] || m.subject}</td>
       <td>${m.questionCount}</td>
       <td>${m.scenarioCount}</td>
-      <td>${m.source === "ai" ? "AI soạn" : "Nhập tay"}</td>
       <td>${m.updatedAt?.toDate ? m.updatedAt.toDate().toLocaleString("vi-VN") : "-"}</td>
     </tr>
   `).join("");

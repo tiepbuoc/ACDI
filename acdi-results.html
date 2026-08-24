@@ -177,12 +177,13 @@ function renderResult({ info, groups, dimensionScores, acdiScore, level, rec, fe
       datasets: [{
         label: "Mức lệ thuộc (0-100)",
         data: groups.map((g) => dimensionScores[g.key]),
-        backgroundColor: "rgba(230,126,34,0.18)",
-        borderColor: "#e67e22",
-        pointBackgroundColor: "#e67e22",
+        backgroundColor: "rgba(22,163,74,0.18)",
+        borderColor: "#16a34a",
+        pointBackgroundColor: "#16a34a",
       }],
     },
     options: {
+      animation: false,
       scales: { r: { min: 0, max: 100, ticks: { display: false }, pointLabels: { font: { size: 10.5 } } } },
       plugins: { legend: { display: false } },
     },
