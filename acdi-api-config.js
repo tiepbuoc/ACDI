@@ -3,8 +3,8 @@
 // Tách biệt hoàn toàn khỏi AI SMART (không import từ auth-web.js), để 2 hệ thống độc lập nhau.
 const FIXED_ACDI_API_CONFIG = {
   endpoint: "https://api.shopaikey.com/v1",
-  model: "gpt-5-nano",
-  apiKey: "sk-uQmI5tk7o5FdWLq852gCLO2xZTd5OmG2K9RKy7C3raEqGx6v",
+  model: "gpt-4.1-mini",
+  apiKey: "sk-4150297863e3eee405805e8609648e6c5cebb1b502ffb46e",
 };
 
 export async function getAcdiApiConfig() {
