@@ -1,30 +1,32 @@
 // acdi-shared.js
 // Lõi dùng chung cho hệ thống ACDI Check: ngân hàng câu hỏi mặc định (dự phòng),
-// soạn đề bằng AI (có cache theo Firestore để tối ưu chi phí), công thức tính điểm ACDI cố định,
-// mô hình 4 mức độ, và các hàm đọc/ghi Firestore.
+// ngân hàng đề THEO LỚP + MÔN do quản trị viên nạp sẵn (thủ công hoặc bằng AI, xem admin.html),
+// công thức tính điểm ACDI cố định, mô hình 4 mức độ, và các hàm đọc/ghi Firestore.
 //
 // ACDI Check là HỆ THỐNG ĐỘC LẬP HOÀN TOÀN với AI SMART Chatbot / Learning Passport / tiện ích
 // Chrome: không dùng chung Firebase project, không dùng chung tài khoản đăng nhập, không dùng
-// chung lịch sử hội thoại. ACDI Check KHÔNG yêu cầu đăng nhập — ai cũng có thể làm khảo sát và
-// xem trang Dữ liệu công khai.
+// chung lịch sử hội thoại. Học sinh làm khảo sát KHÔNG cần đăng nhập; trang Dữ liệu và trang
+// admin.html yêu cầu mã truy cập/mật khẩu riêng (xem mục 9).
 //
-// KIẾN TRÚC CHẤM ĐIỂM (đã sửa lại — xem lịch sử: nhóm "idea" từng luôn ra điểm rất cao do AI
-// đôi khi soạn câu hỏi lệch chiều "reverse" mà không tự phát hiện được lỗi đó):
-//   (a) soạn đề (25 câu Likert + 5 tình huống tự luận) — AI soạn 1 LẦN, có cache theo tiêu chí
-//       (cấp học/khối lớp/môn học) để không phải gọi AI lại mỗi lần có người trùng tiêu chí.
-//       AI PHẢI tự soạn kèm "đáp án" (rubric: keyPoints + riskKeywords) cho từng câu tự luận
-//       NGAY LÚC SOẠN ĐỀ — đây là "chìa khoá chấm điểm" được lưu cùng đề trong cache.
-//   (b) CHẤM ĐIỂM (cả bảng hỏi lẫn tình huống) hoàn toàn bằng CÔNG THỨC CỐ ĐỊNH trong JavaScript
-//       (mục 2 và mục 3 bên dưới), dựa trên rubric AI đã soạn sẵn ở bước (a) — KHÔNG gọi AI lúc
-//       học sinh nộp bài để chấm điểm, nên điểm số hoàn toàn nhất quán, có thể kiểm tra lại được.
-//   (c) SAU KHI đã có điểm số cố định (dimensionScores, acdiScore, level), gọi AI ĐÚNG 1 LẦN
-//       kèm theo đề + rubric đáp án + câu trả lời của học sinh + điểm hệ thống đã chấm, để AI
-//       viết NHẬN XÉT / LỜI KHUYÊN cá nhân hoá (không được thay đổi điểm số) — xem generateFeedbackWithAI().
-//       Nếu bước này lỗi, hệ thống dùng buildRecommendation() (thuần công thức) làm phương án dự phòng.
+// KIẾN TRÚC ĐỀ + CHẤM ĐIỂM:
+//   (a) NGÂN HÀNG ĐỀ (mục 7): quản trị viên (ở admin.html) chuẩn bị sẵn 1 bộ đề đầy đủ (25 câu
+//       Likert + 5 tình huống tự luận, kèm rubric keyPoints/riskKeywords) cho TỪNG (khối lớp, môn
+//       học) — thủ công hoặc bấm "Tạo nhanh bằng AI" (gọi AI ĐÚNG 1 LẦN cho combo đó, quản trị viên
+//       xem/sửa rồi mới lưu). KHÔNG còn cơ chế tự động gọi AI khi học sinh gặp tổ hợp mới.
+//   (b) LẮP RÁP ĐỀ (assembleTestForProfile): khi học sinh làm khảo sát, hệ thống CHỈ ĐỌC ngân hàng
+//       theo (các) môn học sinh đã chọn rồi chia đều 25 câu + 5 tình huống cho các môn đó — thuần
+//       đọc dữ liệu + logic JS, KHÔNG gọi AI.
+//   (c) CHẤM ĐIỂM (cả bảng hỏi lẫn tình huống) hoàn toàn bằng CÔNG THỨC CỐ ĐỊNH trong JavaScript
+//       (mục 2 và mục 3 bên dưới), dựa trên rubric đã có sẵn trong đề — KHÔNG gọi AI lúc học sinh
+//       nộp bài để chấm điểm, nên điểm số hoàn toàn nhất quán, có thể kiểm tra lại được.
+//   (d) SAU KHI đã có điểm số cố định (dimensionScores, acdiScore, level), gọi AI ĐÚNG 1 LẦN để viết
+//       NHẬN XÉT/LỜI KHUYÊN cá nhân hoá — CHỈ nhận điểm số/nhãn tổng quát, KHÔNG nhận nội dung đề hay
+//       câu trả lời gốc của học sinh (xem generateFeedbackWithAI, mục 5b). Nếu lỗi, hệ thống dùng
+//       buildRecommendation() (thuần công thức) làm phương án dự phòng.
 
 import { acdiDb as db } from "./acdi-firebase-config.js";
 import {
-  collection, addDoc, getDocs, getDoc, doc, setDoc, query, orderBy, serverTimestamp,
+  collection, addDoc, getDocs, getDoc, doc, setDoc, deleteDoc, query, orderBy, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getAcdiApiConfig } from "./acdi-api-config.js";
 
@@ -211,7 +213,7 @@ export function computeQuestionnaireScore(dimensionScores) {
 // ============ 2. CHẤM ĐIỂM TÌNH HUỐNG (tự luận) — HOÀN TOÀN BẰNG CÔNG THỨC CỐ ĐỊNH ============
 // KHÔNG gọi AI lúc học sinh nộp bài. Mỗi tình huống đã được AI soạn kèm "đáp án"/rubric
 // (keyPoints + riskKeywords) NGAY LÚC TẠO ĐỀ (xem GENERATION_INSTRUCTION_TEMPLATE mục 5) — rubric
-// đó được lưu cùng đề trong cache Firestore (acdiTests/{testKey}), nên việc chấm điểm về sau chỉ là
+// đó được lưu cùng đề trong ngân hàng đề Firestore (acdiTestBank/{grade}_{subject}), nên việc chấm điểm về sau chỉ là
 // logic JS thuần: luôn ra cùng một kết quả cho cùng một câu trả lời, kiểm tra lại được, không phụ
 // thuộc việc gọi AI lúc chấm có ổn định hay không.
 
@@ -454,20 +456,164 @@ export function generateParticipantCode(len = 8) {
   return out;
 }
 
-// ============ 7. SOẠN ĐỀ BẰNG AI — CÓ CACHE THEO TIÊU CHÍ ============
-// Mục tiêu: tối ưu chi phí gọi AI — nếu 2 người có cùng tiêu chí (cấp học + khối lớp + môn học
-// thường dùng AI), họ dùng CHUNG một bộ đề đã soạn sẵn trong Firestore (acdiTests/{testKey}),
-// thay vì mỗi người lại tốn 1 lượt gọi AI để soạn đề mới. AI CHỈ được gọi để soạn đề khi
-// tiêu chí đó CHƯA từng có đề nào được lưu.
+// ============ 7. NGÂN HÀNG ĐỀ THEO LỚP + MÔN (quản trị viên tự nạp, không tự động gọi AI nữa) ============
+// THAY ĐỔI KIẾN TRÚC: trước đây hệ thống tự gọi AI mỗi khi gặp một tổ hợp (cấp học+khối lớp+môn học)
+// CHƯA từng có ai làm khảo sát. Giờ KHÔNG còn cơ chế đó nữa — việc soạn đề (thủ công hoặc bằng AI)
+// chỉ diễn ra ở trang admin.html (tab "Quản trị đề khảo sát"), do quản trị viên chủ động thực hiện
+// và LƯU SẴN vào ngân hàng đề cho từng (khối lớp, môn học). Khi học sinh làm khảo sát, hệ thống CHỈ
+// ĐỌC ra từ ngân hàng đã có sẵn để LẮP RÁP thành 1 bộ đề (25 câu Likert + 5 tình huống tự luận) —
+// KHÔNG gọi AI ở bước này nữa, dù gặp tổ hợp lớp/môn nào cũng vậy.
 //
-// Việc chấm điểm PHẦN TỰ LUẬN (mục 2b) vẫn luôn gọi AI cho từng học sinh (không cache), vì đó
-// là chấm câu trả lời CỦA RIÊNG học sinh đó, không thể dùng lại giữa các học sinh khác nhau.
+// Mỗi đề trong ngân hàng (1 khối lớp + 1 môn học) LUÔN có đúng cấu trúc 25 câu Likert (5 nhóm × 5
+// câu) + 5 tình huống tự luận — giống hệt cấu trúc một bộ đề đầy đủ bình thường — lưu tại:
+//   Firestore: acdiTestBank/{grade}_{subject}
+//     { grade, subject, groups: [ 5 nhóm × 5 câu ], scenarios: [ 5 tình huống ], source: "ai"|"manual", updatedAt }
+//
+// LẮP RÁP ĐỀ CHO 1 LƯỢT KHẢO SÁT (assembleTestForProfile): học sinh có thể chọn NHIỀU môn học cùng
+// lúc (ở trang Thông tin khảo sát) — nếu vậy, hệ thống lấy đề của TỪNG môn đã chọn (cùng khối lớp),
+// rồi CHIA ĐỀU 25 câu Likert (vẫn giữ đúng 5 câu/nhóm) và 5 tình huống tự luận cho các môn đó theo
+// tỉ lệ càng cân bằng càng tốt (ví dụ 2 môn -> ~13/12 câu Likert, ~3/2 tình huống), KHÔNG ưu tiên cố
+// định môn nào. Nếu chỉ 1 môn có đề -> dùng nguyên đề môn đó. Nếu KHÔNG có đề nào cho các môn đã chọn
+// (ngân hàng chưa được quản trị viên nạp) -> dùng bộ đề mặc định (DEFAULT_ACDI_GROUPS/DEFAULT_SCENARIOS)
+// làm phương án dự phòng, để học sinh vẫn làm được khảo sát bình thường.
 
-export function buildTestCriteriaKey({ schoolLevel, grade, subjects }) {
-  const subjPart = Array.from(new Set(subjects || [])).sort().join("-") || "none";
-  return `${schoolLevel || "na"}_g${grade || "na"}_${subjPart}`.toLowerCase();
+export const SUBJECT_LABELS = {
+  math: "Toán", physics: "Lý", chemistry: "Hóa", literature: "Văn", english: "Anh", other: "Môn khác",
+};
+export const SUBJECT_KEYS = Object.keys(SUBJECT_LABELS);
+
+function testBankDocId(grade, subject) {
+  return `${grade}_${subject}`;
 }
 
+// Đọc 1 đề trong ngân hàng theo (khối lớp, môn học). Trả về null nếu chưa có/lỗi.
+export async function getTestBank(grade, subject) {
+  try {
+    const snap = await getDoc(doc(db, "acdiTestBank", testBankDocId(grade, subject)));
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    console.warn("Không đọc được ngân hàng đề:", err);
+    return null;
+  }
+}
+
+// Lưu/ghi đè 1 đề trong ngân hàng (dùng ở trang admin — nhập tay hoặc sau khi AI soạn xong và
+// quản trị viên đã xem/chỉnh sửa lại). "source" chỉ để ghi chú nguồn gốc, không ảnh hưởng chấm điểm.
+export async function saveTestBank(grade, subject, { groups, scenarios, source }) {
+  if (!validateGeneratedTest({ groups, scenarios })) {
+    throw new Error("Cấu trúc đề không hợp lệ: cần đúng 5 nhóm × 5 câu Likert và 5 tình huống tự luận đủ rubric.");
+  }
+  await setDoc(doc(db, "acdiTestBank", testBankDocId(grade, subject)), {
+    grade: String(grade), subject, groups, scenarios,
+    source: source || "manual", updatedAt: serverTimestamp(),
+  });
+}
+
+// Xoá hẳn 1 đề khỏi ngân hàng (dùng ở trang admin).
+export async function deleteTestBank(grade, subject) {
+  await deleteDoc(doc(db, "acdiTestBank", testBankDocId(grade, subject)));
+}
+
+// Danh sách toàn bộ đề đã có trong ngân hàng (dùng để hiển thị bảng tổng quan ở trang admin —
+// combo lớp/môn nào đã có đề, đề đó có bao nhiêu câu, cập nhật lúc nào, nguồn gốc AI hay nhập tay).
+export async function listTestBankMeta() {
+  const snap = await getDocs(collection(db, "acdiTestBank"));
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      grade: data.grade,
+      subject: data.subject,
+      source: data.source || "manual",
+      updatedAt: data.updatedAt,
+      questionCount: (data.groups || []).reduce((s, g) => s + (g.questions?.length || 0), 0),
+      scenarioCount: (data.scenarios || []).length,
+    };
+  });
+}
+
+// Soạn 1 đề đầy đủ (25 câu Likert + 5 tình huống tự luận) cho ĐÚNG 1 (khối lớp, môn học) bằng AI —
+// dùng lại đúng prompt/luật soạn đề ở GENERATION_INSTRUCTION_TEMPLATE (chỉ truyền subjects là mảng
+// 1 phần tử). Hàm này CHỈ được gọi từ trang admin.html khi quản trị viên bấm "Tạo nhanh bằng AI" —
+// KHÔNG được gọi tự động lúc học sinh làm khảo sát.
+export async function generateSubjectTestWithAI({ schoolLevel, grade, subject }) {
+  return generateTestWithAI({ schoolLevel, grade, subjects: [subject] });
+}
+
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Chia "total" slot cho "k" nguồn sao cho càng đều càng tốt, phần dư xoay vòng theo "rotateOffset"
+// (để dồn tích qua nhiều nhóm/nhiều lượt vẫn ra tổng cân bằng thay vì luôn ưu tiên 1 nguồn cố định).
+// Ví dụ total=5, k=2: base=2 mỗi nguồn, dư 1 -> xoay giữa 2 nguồn theo từng nhóm, tổng cả 5 nhóm
+// ra khoảng 13/12 — đúng như ví dụ khách hàng mô tả (2 môn, 25 câu -> ~13/12).
+function distributeCounts(total, k, rotateOffset = 0) {
+  const base = Math.floor(total / k);
+  const remainder = total - base * k;
+  const counts = new Array(k).fill(base);
+  for (let r = 0; r < remainder; r++) counts[(rotateOffset + r) % k] += 1;
+  return counts;
+}
+
+// Lắp ráp 1 bộ đề hoàn chỉnh cho 1 lượt khảo sát, dựa trên các đề đã có sẵn trong ngân hàng cho
+// khối lớp + (các) môn học học sinh đã chọn — KHÔNG gọi AI. Trả về { groups, scenarios, source,
+// subjectsUsed }. source: "bank" (lắp từ ngân hàng) hoặc "default" (chưa có đề nào trong ngân hàng
+// cho các môn đã chọn, dùng bộ đề mặc định để học sinh vẫn làm được khảo sát).
+export async function assembleTestForProfile({ schoolLevel, grade, subjects }) {
+  const subjectList = Array.from(new Set((subjects || []).filter((s) => SUBJECT_KEYS.includes(s))));
+  if (subjectList.length === 0) {
+    return { groups: DEFAULT_ACDI_GROUPS, scenarios: DEFAULT_SCENARIOS, source: "default", subjectsUsed: [] };
+  }
+
+  const banks = [];
+  for (const subj of subjectList) {
+    const bank = await getTestBank(grade, subj);
+    if (bank && validateGeneratedTest(bank)) banks.push({ subject: subj, ...bank });
+  }
+
+  if (banks.length === 0) {
+    return { groups: DEFAULT_ACDI_GROUPS, scenarios: DEFAULT_SCENARIOS, source: "default", subjectsUsed: [] };
+  }
+
+  if (banks.length === 1) {
+    return { groups: banks[0].groups, scenarios: banks[0].scenarios, source: "bank", subjectsUsed: [banks[0].subject] };
+  }
+
+  const k = banks.length;
+  const groupKeys = ["start", "idea", "process", "trust", "independence"];
+  const assembledGroups = groupKeys.map((key, groupIdx) => {
+    const counts = distributeCounts(5, k, groupIdx); // xoay theo groupIdx -> tổng dồn qua 5 nhóm ra cân bằng
+    let picked = [];
+    banks.forEach((bank, i) => {
+      const bankGroup = bank.groups.find((g) => g.key === key) || bank.groups[groupIdx];
+      const qs = shuffleArray(bankGroup?.questions || []).slice(0, counts[i])
+        .map((q) => ({ ...q, id: `${key}_${bank.subject}_${q.id}` })); // đổi id -> tránh trùng giữa các môn
+      picked = picked.concat(qs);
+    });
+    const canonical = GROUP_DEFS[groupIdx];
+    return { key: canonical.key, title: canonical.title, desc: canonical.desc, questions: shuffleArray(picked) };
+  });
+
+  const essayCounts = distributeCounts(5, k, 0);
+  let pickedScenarios = [];
+  banks.forEach((bank, i) => {
+    const cands = shuffleArray(bank.scenarios || []).slice(0, essayCounts[i]);
+    pickedScenarios = pickedScenarios.concat(cands);
+  });
+  pickedScenarios = shuffleArray(pickedScenarios).map((sc, idx) => ({
+    ...sc, id: `s${idx + 1}`, title: `Tình huống ${idx + 1} · ${scenarioCategoryLabel(sc.title)}`,
+  }));
+
+  return { groups: assembledGroups, scenarios: pickedScenarios, source: "bank", subjectsUsed: banks.map((b) => b.subject) };
+}
+
+// ============ 7b. PROMPT SOẠN ĐỀ BẰNG AI (dùng bởi generateSubjectTestWithAI ở admin.html) ============
 const GENERATION_INSTRUCTION_TEMPLATE = (criteria) => `Bạn là chuyên gia thiết kế công cụ đo lường tâm lý giáo dục, được giao soạn MỘT bộ đề ACDI Check
 (đo Chỉ số lệ thuộc nhận thức vào AI của học sinh) phù hợp với nhóm đối tượng sau:
 - Cấp học: ${criteria.schoolLevel === "thpt" ? "Trung học phổ thông (THPT)" : "Trung học cơ sở (THCS)"}
@@ -599,7 +745,7 @@ SCHEMA JSON:
   ]
 }`;
 
-function validateGeneratedTest(data) {
+export function validateGeneratedTest(data) {
   if (!data || !Array.isArray(data.groups) || !Array.isArray(data.scenarios)) return false;
   if (data.groups.length !== 5 || data.scenarios.length !== 5) return false;
   const expectedKeys = ["start", "idea", "process", "trust", "independence"];
@@ -652,41 +798,6 @@ export async function generateTestWithAI(criteria) {
   return { groups: parsed.groups, scenarios: parsed.scenarios };
 }
 
-// Lấy bộ đề: ưu tiên đọc cache trong Firestore (acdiTests/{testKey}) theo tiêu chí; nếu chưa có,
-// gọi AI soạn đề mới rồi lưu lại cache cho các lần sau dùng chung. Nếu AI lỗi, dùng bộ đề mặc định
-// (không lưu bộ mặc định vào cache, để lần sau vẫn thử soạn lại bằng AI).
-export async function getOrGenerateAcdiTest(criteria) {
-  const testKey = buildTestCriteriaKey(criteria);
-  try {
-    const cachedSnap = await getDoc(doc(db, "acdiTests", testKey));
-    if (cachedSnap.exists()) {
-      const data = cachedSnap.data();
-      if (validateGeneratedTest(data)) {
-        return { testKey, groups: data.groups, scenarios: data.scenarios, source: "cache" };
-      }
-    }
-  } catch (err) {
-    console.warn("Không đọc được cache đề ACDI, sẽ thử soạn đề mới:", err);
-  }
-
-  try {
-    const generated = await generateTestWithAI(criteria);
-    try {
-      await setDoc(doc(db, "acdiTests", testKey), {
-        ...generated,
-        criteria,
-        createdAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.warn("Soạn đề AI thành công nhưng lưu cache thất bại (vẫn dùng được đề vừa soạn):", err);
-    }
-    return { testKey, groups: generated.groups, scenarios: generated.scenarios, source: "ai" };
-  } catch (err) {
-    console.warn("Soạn đề bằng AI thất bại, dùng bộ đề mặc định:", err);
-    return { testKey, groups: DEFAULT_ACDI_GROUPS, scenarios: DEFAULT_SCENARIOS, source: "default" };
-  }
-}
-
 // ============ 8. FIRESTORE — LƯU / ĐỌC KẾT QUẢ ============
 // Không có đăng nhập/tài khoản trong hệ thống ACDI Check — mỗi bài nộp chỉ gắn với participantCode
 // (mã ẩn danh do trình duyệt tự sinh), không lưu bất kỳ thông tin định danh cá nhân nào khác.
@@ -698,7 +809,7 @@ export async function saveAssessment(data) {
   return ref.id;
 }
 
-// Trang Dữ liệu (công khai, không cần đăng nhập): lấy toàn bộ kết quả khảo sát.
+// Trang Dữ liệu (chỉ nhóm nghiên cứu, yêu cầu mã truy cập — xem mục 9): lấy toàn bộ kết quả khảo sát.
 export async function listAssessments() {
   const snap = await getDocs(query(collection(db, "assessments"), orderBy("createdAt", "desc")));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));

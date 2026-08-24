@@ -39,6 +39,51 @@
   .tiny-btn:hover{ border-color:var(--orange); color:var(--orange2); }
   .tiny-btn.danger:hover{ border-color:var(--red); color:var(--red); }
   .pill-status{ font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:999px; color:#fff; }
+
+  .admin-tabs{ display:flex; gap:8px; margin-bottom:20px; border-bottom:1.5px solid var(--border); }
+  .admin-tab-btn{
+    padding:10px 16px; border:none; background:none; font-size:13px; font-weight:700; color:var(--text-mid);
+    cursor:pointer; border-bottom:2.5px solid transparent; margin-bottom:-1.5px;
+  }
+  .admin-tab-btn.active{ color:var(--orange2); border-bottom-color:var(--orange2); }
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
+
+  .bank-select-row{ display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom:16px; }
+  .bank-select-row label{ font-size:11px; font-weight:700; color:var(--text-mid); display:block; margin-bottom:5px; }
+  .bank-select-row select{
+    padding:10px 12px; border:1.5px solid var(--border); border-radius:12px; font-size:13px;
+    font-family:'DM Sans',sans-serif; background:#fff; min-width:150px;
+  }
+  .bank-status-badge{ font-size:11px; font-weight:700; padding:4px 12px; border-radius:999px; }
+  .bank-status-badge.has-bank{ background:var(--green-pale); color:var(--green); }
+  .bank-status-badge.no-bank{ background:var(--red-pale); color:var(--red); }
+
+  .edit-group-card{ border:1.5px solid var(--border); border-radius:16px; padding:16px; margin-bottom:14px; }
+  .edit-group-card .g-head{ display:flex; gap:10px; margin-bottom:10px; }
+  .edit-group-card .g-head input{ flex:1; padding:8px 10px; border:1.5px solid var(--border); border-radius:10px; font-size:12.5px; }
+  .edit-q-row{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .edit-q-row textarea{
+    flex:1; padding:8px 10px; border:1.5px solid var(--border); border-radius:10px; font-size:12.5px;
+    font-family:'DM Sans',sans-serif; resize:vertical; min-height:38px;
+  }
+  .edit-q-row label{ font-size:10.5px; color:var(--text-mid); display:flex; align-items:center; gap:4px; white-space:nowrap; }
+
+  .edit-sc-card{ border:1.5px solid var(--border); border-radius:16px; padding:16px; margin-bottom:14px; }
+  .edit-sc-card .f-label{ font-size:10.5px; font-weight:700; color:var(--text-mid); margin:10px 0 5px; text-transform:uppercase; letter-spacing:0.5px; }
+  .edit-sc-card .f-label:first-child{ margin-top:0; }
+  .edit-sc-card input[type=text], .edit-sc-card textarea{
+    width:100%; padding:8px 10px; border:1.5px solid var(--border); border-radius:10px; font-size:12.5px;
+    font-family:'DM Sans',sans-serif; resize:vertical;
+  }
+  .kp-row{ display:flex; gap:6px; margin-bottom:6px; }
+  .kp-row input{ padding:7px 9px; border:1.5px solid var(--border); border-radius:8px; font-size:12px; }
+  .kp-row .kp-label{ flex:1; }
+  .kp-row .kp-keywords{ flex:2; }
+  .kp-row button{ padding:0 10px; border:1.5px solid var(--border); border-radius:8px; background:#fff; cursor:pointer; color:var(--red); }
+  .add-kp-btn{ font-size:11.5px; font-weight:700; color:var(--orange2); background:none; border:none; cursor:pointer; padding:4px 0; }
+
+  .bank-overview-table td, .bank-overview-table th{ font-size:12px; }
 </style>
 </head>
 <body>
@@ -52,47 +97,116 @@
   <button class="acdi-btn-primary" id="loginBtn" style="width:100%;">Đăng nhập</button>
 </div>
 
-<div id="adminWrap" class="admin-wrap">
-  <div class="section-label"><i class="fa-solid fa-key"></i> Quản trị</div>
-  <h2 class="section-title" style="margin-bottom:4px;">Quản lý mã truy cập trang Dữ liệu</h2>
-  <p style="font-size:12.5px; color:var(--text-mid); margin-bottom:16px;">Tạo mã truy cập để cấp cho từng nhóm/người trong nhóm nghiên cứu vào xem trang Dữ liệu. Mỗi mã giới hạn số trình duyệt được phép dùng — trình duyệt đầu tiên nhập mã sẽ được gắn cố định vào mã đó cho tới khi đạt giới hạn.</p>
+<div id="adminWrap" class="admin-wrap" style="max-width:1000px;">
+  <div class="section-label"><i class="fa-solid fa-gauge-high"></i> Quản trị ACDI Check</div>
 
-  <div class="card">
-    <h3 class="section-title" style="font-size:14px; margin-bottom:14px;">Tạo mã mới</h3>
-    <div class="create-form">
-      <div>
-        <label>Tên mã (để dễ nhận biết)</label>
-        <input type="text" id="newKeyName" placeholder="Ví dụ: Nhóm nghiên cứu A" />
-      </div>
-      <div>
-        <label>Số trình duyệt tối đa</label>
-        <input type="number" id="newKeyMax" value="1" min="1" />
-      </div>
-      <div>
-        <label>Hạn dùng (để trống = không hết hạn)</label>
-        <input type="date" id="newKeyExpiry" />
-      </div>
-      <button class="acdi-btn-primary" id="createKeyBtn">Tạo mã</button>
-    </div>
-    <div id="createMsg" style="font-size:12.5px; color:var(--red); min-height:16px; margin-top:10px;"></div>
+  <div class="admin-tabs">
+    <button class="admin-tab-btn active" data-tab="keysTab">Mã truy cập dữ liệu</button>
+    <button class="admin-tab-btn" data-tab="testsTab">Quản trị đề khảo sát</button>
   </div>
 
-  <div class="card" style="margin-top:18px;">
-    <h3 class="section-title" style="font-size:14px;">Danh sách mã đã tạo</h3>
-    <div class="table-scroll" style="overflow-x:auto;">
-      <table>
-        <thead>
-          <tr><th>Mã</th><th>Tên</th><th>Trình duyệt đang dùng</th><th>Số lượng tối đa</th><th>Hạn dùng</th><th>Trạng thái</th><th></th></tr>
-        </thead>
-        <tbody id="keysBody"></tbody>
-      </table>
-      <div id="keysEmpty" style="display:none; text-align:center; padding:24px; color:var(--text-mid); font-size:13px;">Chưa có mã nào được tạo.</div>
+  <div id="keysTab" class="tab-panel active">
+    <h2 class="section-title" style="margin-bottom:4px;">Quản lý mã truy cập trang Dữ liệu</h2>
+    <p style="font-size:12.5px; color:var(--text-mid); margin-bottom:16px;">Tạo mã truy cập để cấp cho từng nhóm/người trong nhóm nghiên cứu vào xem trang Dữ liệu. Mỗi mã giới hạn số trình duyệt được phép dùng — trình duyệt đầu tiên nhập mã sẽ được gắn cố định vào mã đó cho tới khi đạt giới hạn.</p>
+
+    <div class="card">
+      <h3 class="section-title" style="font-size:14px; margin-bottom:14px;">Tạo mã mới</h3>
+      <div class="create-form">
+        <div>
+          <label>Tên mã (để dễ nhận biết)</label>
+          <input type="text" id="newKeyName" placeholder="Ví dụ: Nhóm nghiên cứu A" />
+        </div>
+        <div>
+          <label>Số trình duyệt tối đa</label>
+          <input type="number" id="newKeyMax" value="1" min="1" />
+        </div>
+        <div>
+          <label>Hạn dùng (để trống = không hết hạn)</label>
+          <input type="date" id="newKeyExpiry" />
+        </div>
+        <button class="acdi-btn-primary" id="createKeyBtn">Tạo mã</button>
+      </div>
+      <div id="createMsg" style="font-size:12.5px; color:var(--red); min-height:16px; margin-top:10px;"></div>
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <h3 class="section-title" style="font-size:14px;">Danh sách mã đã tạo</h3>
+      <div class="table-scroll" style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>Mã</th><th>Tên</th><th>Trình duyệt đang dùng</th><th>Số lượng tối đa</th><th>Hạn dùng</th><th>Trạng thái</th><th></th></tr>
+          </thead>
+          <tbody id="keysBody"></tbody>
+        </table>
+        <div id="keysEmpty" style="display:none; text-align:center; padding:24px; color:var(--text-mid); font-size:13px;">Chưa có mã nào được tạo.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="testsTab" class="tab-panel">
+    <h2 class="section-title" style="margin-bottom:4px;">Quản trị đề khảo sát (ngân hàng theo lớp + môn)</h2>
+    <p style="font-size:12.5px; color:var(--text-mid); margin-bottom:16px;">Mỗi (khối lớp, môn học) có một bộ đề riêng gồm 25 câu trắc nghiệm (5 nhóm × 5 câu) + 5 tình huống tự luận. Khi học sinh làm khảo sát, hệ thống lấy đề từ đây để lắp ráp — không tự gọi AI. Chọn khối lớp + môn học bên dưới để xem/sửa đề, hoặc bấm "Tạo nhanh bằng AI" để soạn mới.</p>
+
+    <div class="card">
+      <div class="bank-select-row">
+        <div>
+          <label>Cấp học</label>
+          <select id="bankSchoolLevel">
+            <option value="thcs">THCS</option>
+            <option value="thpt">THPT</option>
+          </select>
+        </div>
+        <div>
+          <label>Khối lớp</label>
+          <select id="bankGrade"></select>
+        </div>
+        <div>
+          <label>Môn học</label>
+          <select id="bankSubject"></select>
+        </div>
+        <span id="bankStatusBadge" class="bank-status-badge no-bank">Chưa có đề</span>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="acdi-btn-secondary" id="genAiBtn"><i class="fa-solid fa-wand-magic-sparkles"></i> Tạo nhanh bằng AI</button>
+        <button class="acdi-btn-secondary" id="newManualBtn"><i class="fa-solid fa-pen"></i> Soạn tay từ đầu</button>
+        <button class="acdi-btn-secondary" id="deleteBankBtn" style="color:var(--red); border-color:var(--red);"><i class="fa-solid fa-trash"></i> Xoá đề này</button>
+      </div>
+      <div id="bankMsg" style="font-size:12.5px; color:var(--red); min-height:18px; margin-top:10px;"></div>
+    </div>
+
+    <div id="bankEditWrap" style="display:none; margin-top:18px;">
+      <div class="card">
+        <h3 class="section-title" style="font-size:14px;">25 câu trắc nghiệm (5 nhóm × 5 câu)</h3>
+        <div id="groupsEditWrap"></div>
+      </div>
+      <div class="card" style="margin-top:18px;">
+        <h3 class="section-title" style="font-size:14px;">5 tình huống tự luận</h3>
+        <div id="scenariosEditWrap"></div>
+      </div>
+      <div style="margin:18px 0; text-align:right;">
+        <button class="acdi-btn-primary" id="saveBankBtn">Lưu đề vào ngân hàng</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <h3 class="section-title" style="font-size:14px;">Tổng quan ngân hàng đề đã có</h3>
+      <div class="table-scroll" style="overflow-x:auto;">
+        <table class="bank-overview-table">
+          <thead><tr><th>Khối lớp</th><th>Môn</th><th>Số câu TN</th><th>Số tình huống</th><th>Nguồn</th><th>Cập nhật</th></tr></thead>
+          <tbody id="bankOverviewBody"></tbody>
+        </table>
+        <div id="bankOverviewEmpty" style="display:none; text-align:center; padding:20px; color:var(--text-mid); font-size:13px;">Ngân hàng đề chưa có dữ liệu nào.</div>
+      </div>
     </div>
   </div>
 </div>
 
 <script type="module">
-import { createAccessKey, updateAccessKey, deleteAccessKey, listAccessKeys } from "./acdi-shared.js";
+import {
+  createAccessKey, updateAccessKey, deleteAccessKey, listAccessKeys,
+  GROUP_DEFS, SUBJECT_LABELS, SUBJECT_KEYS, getTestBank, saveTestBank, deleteTestBank,
+  listTestBankMeta, generateSubjectTestWithAI, validateGeneratedTest,
+} from "./acdi-shared.js";
 
 // Mật khẩu tĩnh — trang admin KHÔNG dùng tài khoản/đăng nhập thật, chỉ chặn truy cập tình cờ.
 const ADMIN_PASSWORD = "nhat1234";
@@ -108,6 +222,7 @@ function unlockAdmin() {
   loginWrap.style.display = "none";
   adminWrap.style.display = "block";
   loadKeys();
+  initBankTab();
 }
 
 loginBtn.onclick = () => {
@@ -119,6 +234,15 @@ pwInput.addEventListener("keydown", (e) => { if (e.key === "Enter") loginBtn.cli
 let alreadyOk = false;
 try { alreadyOk = sessionStorage.getItem("acdi_admin_ok") === "1"; } catch { alreadyOk = false; }
 if (alreadyOk) unlockAdmin();
+
+document.querySelectorAll(".admin-tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".admin-tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.getAttribute("data-tab")).classList.add("active");
+  });
+});
 
 // ============ Quản lý key ============
 const keysBody = document.getElementById("keysBody");
@@ -198,6 +322,261 @@ document.getElementById("createKeyBtn").onclick = async () => {
     createMsg.textContent = "Có lỗi khi tạo mã, vui lòng thử lại.";
   }
 };
+
+// ============ Quản trị đề khảo sát ============
+const bankSchoolLevelEl = document.getElementById("bankSchoolLevel");
+const bankGradeEl = document.getElementById("bankGrade");
+const bankSubjectEl = document.getElementById("bankSubject");
+const bankStatusBadge = document.getElementById("bankStatusBadge");
+const bankMsg = document.getElementById("bankMsg");
+const bankEditWrap = document.getElementById("bankEditWrap");
+const groupsEditWrap = document.getElementById("groupsEditWrap");
+const scenariosEditWrap = document.getElementById("scenariosEditWrap");
+const genAiBtn = document.getElementById("genAiBtn");
+const newManualBtn = document.getElementById("newManualBtn");
+const deleteBankBtn = document.getElementById("deleteBankBtn");
+const saveBankBtn = document.getElementById("saveBankBtn");
+const bankOverviewBody = document.getElementById("bankOverviewBody");
+const bankOverviewEmpty = document.getElementById("bankOverviewEmpty");
+
+bankSubjectEl.innerHTML = SUBJECT_KEYS.map((k) => `<option value="${k}">${SUBJECT_LABELS[k]}</option>`).join("");
+
+function gradesFor(level) { return level === "thcs" ? [6, 7, 8, 9] : [10, 11, 12]; }
+function renderBankGrades() {
+  bankGradeEl.innerHTML = gradesFor(bankSchoolLevelEl.value).map((g) => `<option value="${g}">Lớp ${g}</option>`).join("");
+}
+bankSchoolLevelEl.onchange = () => { renderBankGrades(); loadCurrentBank(); };
+bankGradeEl.onchange = loadCurrentBank;
+bankSubjectEl.onchange = loadCurrentBank;
+renderBankGrades();
+
+function emptyGroupsTemplate() {
+  return GROUP_DEFS.map((gd) => ({
+    key: gd.key, title: gd.title, desc: gd.desc,
+    questions: Array.from({ length: 5 }, (_, i) => ({ id: `g_${gd.key}_q${i + 1}`, text: "", reverse: gd.key === "independence" })),
+  }));
+}
+function emptyScenariosTemplate() {
+  return Array.from({ length: 5 }, (_, i) => ({
+    id: `s${i + 1}`, title: `Tình huống ${i + 1}`, prompt: "", aiAnswer: "", question: "", type: "text",
+    keyPoints: [{ label: "", keywords: [] }, { label: "", keywords: [] }],
+    riskKeywords: [],
+  }));
+}
+
+let currentBankData = null; // { groups, scenarios } đang hiển thị trong form (chưa chắc đã lưu)
+
+function renderGroupsEdit(groups) {
+  groupsEditWrap.innerHTML = groups.map((g, gi) => `
+    <div class="edit-group-card" data-gindex="${gi}">
+      <div class="g-head">
+        <input type="text" class="g-title" value="${escapeAttr(g.title)}" placeholder="Tên nhóm" />
+        <input type="text" class="g-desc" value="${escapeAttr(g.desc)}" placeholder="Mô tả nhóm" />
+      </div>
+      ${g.questions.map((q, qi) => `
+        <div class="edit-q-row" data-qindex="${qi}">
+          <textarea class="q-text" placeholder="Câu hỏi ${qi + 1}">${escapeHtml(q.text)}</textarea>
+          <label><input type="checkbox" class="q-reverse" ${q.reverse ? "checked" : ""} /> đảo điểm</label>
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
+}
+
+function renderScenariosEdit(scenarios) {
+  scenariosEditWrap.innerHTML = scenarios.map((sc, si) => `
+    <div class="edit-sc-card" data-sindex="${si}">
+      <div class="f-label">Tiêu đề tình huống ${si + 1}</div>
+      <input type="text" class="sc-title" value="${escapeAttr(sc.title)}" />
+      <div class="f-label">Bối cảnh / prompt</div>
+      <textarea class="sc-prompt" rows="2">${escapeHtml(sc.prompt || "")}</textarea>
+      <div class="f-label">Câu trả lời của AI (nếu có)</div>
+      <textarea class="sc-aiAnswer" rows="2">${escapeHtml(sc.aiAnswer || "")}</textarea>
+      <div class="f-label">Câu hỏi cho học sinh</div>
+      <textarea class="sc-question" rows="2">${escapeHtml(sc.question || "")}</textarea>
+      <div class="f-label">Ý chính cần có (keyPoints) — nhãn + từ khoá cách nhau bởi dấu phẩy</div>
+      <div class="kp-wrap">
+        ${(sc.keyPoints || []).map((kp) => `
+          <div class="kp-row">
+            <input type="text" class="kp-label" placeholder="Mô tả ý chính" value="${escapeAttr(kp.label)}" />
+            <input type="text" class="kp-keywords" placeholder="từ khoá 1, từ khoá 2, ..." value="${escapeAttr((kp.keywords || []).join(", "))}" />
+            <button type="button" class="kp-remove">✕</button>
+          </div>
+        `).join("")}
+      </div>
+      <button type="button" class="add-kp-btn">+ Thêm ý chính</button>
+      <div class="f-label">Từ khoá rủi ro (riskKeywords) — cách nhau bởi dấu phẩy</div>
+      <input type="text" class="sc-risk" value="${escapeAttr((sc.riskKeywords || []).join(", "))}" />
+    </div>
+  `).join("");
+
+  scenariosEditWrap.querySelectorAll(".edit-sc-card").forEach((card) => {
+    card.querySelector(".add-kp-btn").onclick = () => {
+      const wrap = card.querySelector(".kp-wrap");
+      const row = document.createElement("div");
+      row.className = "kp-row";
+      row.innerHTML = `<input type="text" class="kp-label" placeholder="Mô tả ý chính" /><input type="text" class="kp-keywords" placeholder="từ khoá 1, từ khoá 2, ..." /><button type="button" class="kp-remove">✕</button>`;
+      row.querySelector(".kp-remove").onclick = () => row.remove();
+      wrap.appendChild(row);
+    };
+    card.querySelectorAll(".kp-remove").forEach((btn) => { btn.onclick = () => btn.closest(".kp-row").remove(); });
+  });
+}
+
+function escapeHtml(s) { return String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+
+function readGroupsFromForm() {
+  return Array.from(groupsEditWrap.querySelectorAll(".edit-group-card")).map((card, gi) => {
+    const gd = GROUP_DEFS[gi];
+    const questions = Array.from(card.querySelectorAll(".edit-q-row")).map((row, qi) => ({
+      id: `g${gi + 1}q${qi + 1}`,
+      text: row.querySelector(".q-text").value.trim(),
+      reverse: row.querySelector(".q-reverse").checked,
+    }));
+    return {
+      key: gd.key,
+      title: card.querySelector(".g-title").value.trim() || gd.title,
+      desc: card.querySelector(".g-desc").value.trim() || gd.desc,
+      questions,
+    };
+  });
+}
+
+function readScenariosFromForm() {
+  return Array.from(scenariosEditWrap.querySelectorAll(".edit-sc-card")).map((card, si) => {
+    const keyPoints = Array.from(card.querySelectorAll(".kp-row")).map((row) => ({
+      label: row.querySelector(".kp-label").value.trim(),
+      keywords: row.querySelector(".kp-keywords").value.split(",").map((s) => s.trim()).filter(Boolean),
+    })).filter((kp) => kp.label && kp.keywords.length > 0);
+    const riskKeywords = card.querySelector(".sc-risk").value.split(",").map((s) => s.trim()).filter(Boolean);
+    const aiAnswer = card.querySelector(".sc-aiAnswer").value.trim();
+    return {
+      id: `s${si + 1}`,
+      title: card.querySelector(".sc-title").value.trim() || `Tình huống ${si + 1}`,
+      prompt: card.querySelector(".sc-prompt").value.trim(),
+      ...(aiAnswer ? { aiAnswer } : {}),
+      question: card.querySelector(".sc-question").value.trim(),
+      type: "text",
+      keyPoints,
+      riskKeywords,
+    };
+  });
+}
+
+function showEditForm(groups, scenarios) {
+  currentBankData = { groups, scenarios };
+  renderGroupsEdit(groups);
+  renderScenariosEdit(scenarios);
+  bankEditWrap.style.display = "block";
+}
+
+async function loadCurrentBank() {
+  bankMsg.style.color = "var(--red)";
+  bankMsg.textContent = "";
+  bankEditWrap.style.display = "none";
+  const grade = bankGradeEl.value;
+  const subject = bankSubjectEl.value;
+  if (!grade || !subject) return;
+  const bank = await getTestBank(grade, subject);
+  if (bank) {
+    bankStatusBadge.textContent = `Đã có đề (${bank.source === "ai" ? "AI soạn" : "nhập tay"})`;
+    bankStatusBadge.className = "bank-status-badge has-bank";
+    showEditForm(bank.groups, bank.scenarios);
+  } else {
+    bankStatusBadge.textContent = "Chưa có đề";
+    bankStatusBadge.className = "bank-status-badge no-bank";
+  }
+}
+
+newManualBtn.onclick = () => {
+  bankMsg.textContent = "";
+  showEditForm(emptyGroupsTemplate(), emptyScenariosTemplate());
+};
+
+genAiBtn.onclick = async () => {
+  const schoolLevel = bankSchoolLevelEl.value;
+  const grade = bankGradeEl.value;
+  const subject = bankSubjectEl.value;
+  bankMsg.style.color = "var(--text-mid)";
+  bankMsg.textContent = "Đang soạn đề bằng AI, vui lòng đợi (có thể mất khoảng nửa phút)...";
+  genAiBtn.disabled = true;
+  try {
+    const generated = await generateSubjectTestWithAI({ schoolLevel, grade, subject });
+    showEditForm(generated.groups, generated.scenarios);
+    currentBankData.__aiGenerated = true;
+    bankMsg.style.color = "var(--green)";
+    bankMsg.textContent = "AI đã soạn xong — vui lòng xem lại nội dung bên dưới rồi bấm \"Lưu đề vào ngân hàng\" để áp dụng.";
+  } catch (err) {
+    console.warn("Soạn đề bằng AI thất bại:", err);
+    bankMsg.style.color = "var(--red)";
+    bankMsg.textContent = "Soạn đề bằng AI thất bại, vui lòng thử lại hoặc soạn tay.";
+  } finally {
+    genAiBtn.disabled = false;
+  }
+};
+
+deleteBankBtn.onclick = async () => {
+  const grade = bankGradeEl.value;
+  const subject = bankSubjectEl.value;
+  if (!confirm(`Xoá đề của Lớp ${grade} - ${SUBJECT_LABELS[subject]}? Không thể hoàn tác.`)) return;
+  await deleteTestBank(grade, subject);
+  bankEditWrap.style.display = "none";
+  loadCurrentBank();
+  loadBankOverview();
+};
+
+saveBankBtn.onclick = async () => {
+  const grade = bankGradeEl.value;
+  const subject = bankSubjectEl.value;
+  const groups = readGroupsFromForm();
+  const scenarios = readScenariosFromForm();
+
+  if (!validateGeneratedTest({ groups, scenarios })) {
+    bankMsg.style.color = "var(--red)";
+    bankMsg.textContent = "Đề chưa hợp lệ: cần đủ 5 nhóm × 5 câu (không để trống câu hỏi) và 5 tình huống có đủ câu hỏi + ít nhất 2 ý chính + ít nhất 2 từ khoá rủi ro mỗi tình huống.";
+    return;
+  }
+  bankMsg.style.color = "var(--text-mid)";
+  bankMsg.textContent = "Đang lưu...";
+  try {
+    await saveTestBank(grade, subject, { groups, scenarios, source: currentBankData?.__aiGenerated ? "ai" : "manual" });
+    bankMsg.style.color = "var(--green)";
+    bankMsg.textContent = "Đã lưu đề vào ngân hàng.";
+    loadCurrentBank();
+    loadBankOverview();
+  } catch (err) {
+    console.warn("Lưu đề thất bại:", err);
+    bankMsg.style.color = "var(--red)";
+    bankMsg.textContent = "Có lỗi khi lưu đề, vui lòng thử lại.";
+  }
+};
+
+async function loadBankOverview() {
+  const meta = await listTestBankMeta().catch(() => []);
+  if (meta.length === 0) {
+    bankOverviewBody.innerHTML = "";
+    bankOverviewEmpty.style.display = "block";
+    return;
+  }
+  bankOverviewEmpty.style.display = "none";
+  meta.sort((a, b) => (a.grade - b.grade) || String(a.subject).localeCompare(b.subject));
+  bankOverviewBody.innerHTML = meta.map((m) => `
+    <tr>
+      <td>Lớp ${m.grade}</td>
+      <td>${SUBJECT_LABELS[m.subject] || m.subject}</td>
+      <td>${m.questionCount}</td>
+      <td>${m.scenarioCount}</td>
+      <td>${m.source === "ai" ? "AI soạn" : "Nhập tay"}</td>
+      <td>${m.updatedAt?.toDate ? m.updatedAt.toDate().toLocaleString("vi-VN") : "-"}</td>
+    </tr>
+  `).join("");
+}
+
+function initBankTab() {
+  loadCurrentBank();
+  loadBankOverview();
+}
 </script>
 </body>
 </html>

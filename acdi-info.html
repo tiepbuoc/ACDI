@@ -111,7 +111,7 @@
 
 <script src="acdi-nav.js"></script>
 <script type="module">
-import { generateParticipantCode, getOrGenerateAcdiTest } from "./acdi-shared.js";
+import { generateParticipantCode, assembleTestForProfile } from "./acdi-shared.js";
 
 renderAcdiNav("survey");
 
@@ -185,14 +185,14 @@ continueBtn.onclick = async () => {
   };
   localStorage.setItem("acdi_info", JSON.stringify(info));
 
-  // Lấy bộ đề (bảng hỏi + tình huống) — ưu tiên đề đã có sẵn trong hệ thống cho đúng tiêu chí
-  // (cấp học + khối lớp + môn học) để tiết kiệm chi phí gọi AI; chỉ soạn đề mới bằng AI nếu
-  // chưa từng có ai làm khảo sát với tiêu chí này. Làm mờ màn hình + hiện loading trong lúc chờ.
+  // Lấy bộ đề (bảng hỏi + tình huống) bằng cách LẮP RÁP từ ngân hàng đề đã được quản trị viên
+  // chuẩn bị sẵn theo từng (khối lớp, môn học) ở trang admin.html — KHÔNG gọi AI ở bước này nữa.
+  // Nếu ngân hàng chưa có đề cho các môn đã chọn, hệ thống tự dùng bộ đề mặc định để vẫn làm được.
   infoMsg.textContent = "";
   continueBtn.disabled = true;
   showOverlay("Đang chuẩn bị đề khảo sát phù hợp với bạn...");
   try {
-    const test = await getOrGenerateAcdiTest({ schoolLevel: info.schoolLevel, grade: info.grade, subjects });
+    const test = await assembleTestForProfile({ schoolLevel: info.schoolLevel, grade: info.grade, subjects });
     localStorage.setItem("acdi_test", JSON.stringify(test));
     window.location.href = "acdi-questionnaire.html"; // giữ overlay hiển thị tới lúc chuyển trang
   } catch (err) {
