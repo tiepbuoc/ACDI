@@ -1,0 +1,802 @@
+{
+  "name": "ACDI AI Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "acdi-gw-token",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "5dfb1979-d263-4940-8997-1379d593e82f",
+      "name": "Webhook Token",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "acdi-gw-chat",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "7eda6bb6-34da-4a77-b95b-187cb770fd99",
+      "name": "Webhook Chat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "acdi-gw-admin",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "447d62fa-7d06-4ad9-bbfa-09911084496b",
+      "name": "Webhook Admin",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== CẤU HÌNH CHUNG CỦA GATEWAY — CHỈ SỬA Ở ĐÂY =====\nconst cfg = {\n  enabled: true,   // công tắc tắt khẩn cấp (cũng có thể bật/tắt qua endpoint admin, không cần sửa file)\n\n  // Origin = giao thức + domain (KHÔNG có đường dẫn). Mọi trang dưới domain này đều được cấp token & gọi AI.\n  allowedOrigins: ['https://tiepbuoc.github.io'],   // thêm 'http://localhost:5500' nếu chạy thử ở máy\n\n  // apiKey Web công khai của Firebase của project cdacdi-6df86 (acdi-firebase-config.js) — chỉ để xác minh phiên ẩn danh (Anonymous Auth)\n  firebaseApiKey: 'AIzaSyB8_X3krCKbzVoNEUraLEMYX48DYNjTvWk',\n\n  // Khoá xem log/thống kê qua endpoint /acdi-gw-admin. Để rỗng = tắt endpoint. Nên ≥ 16 ký tự ngẫu nhiên.\n  adminKey: '',\n\n  // Chặn riêng một web con (dạng \"domain/thư-mục-đầu-tiên\"), ví dụ 'tiepbuoc.github.io/web-bi-lam-dung'\n  blockedSites: [],\n\n  // Mật khẩu trang admin.html — BẮT BUỘC để gọi chế độ soạn đề (generate_test). Phải trùng ADMIN_PASSWORD trong admin.html.\n  // Để rỗng = không kiểm tra (không khuyến nghị: ai cũng soạn đề được và tốn token).\n  generateKey: 'nhat1234',\n\n  // Các chế độ gọi AI. Prompt của từng chế độ nằm trong node \"Chat Gate\" (phía server).\n  modes: {\n    feedback:      { maxTokens: 6543, perUserPerDay: 30 },                              // nhận xét cá nhân hoá sau khi học sinh làm xong\n    generate_test: { maxTokens: 8000, perUserPerDay: 300, requireAdminSecret: true }     // soạn đề (admin) — tạo hàng loạt nên cho nhiều lượt\n  },\n\n  tokenTtlSec: 300,          // tuổi thọ token (60–900)\n  tokenIssuePerHour: 40,     // số token tối đa/người dùng/web/giờ\n  perUserPerMin: 8,          // số câu hỏi/người dùng/phút\n  perUserPerDay: 80,         // số câu hỏi/người dùng/ngày\n  dailyRequestCap: 1500,     // TRẦN số câu hỏi toàn hệ thống/ngày\n  dailyTokenCap: 1000000,     // TRẦN token LLM toàn hệ thống/ngày  → chỉnh theo ngân sách\n  perSiteDailyRequestCap: 0, // trần câu hỏi/ngày cho MỖI web con (0 = không giới hạn riêng)\n  perSiteDailyTokenCap: 0,   // trần token/ngày cho MỖI web con (0 = không giới hạn riêng)\n  ipMaxPerMinToken: 30,      // lớp chặn thô theo IP\n  ipMaxPerMinChat: 60,\n\n  models: ['gpt-4.1-mini-2025-04-14', 'gpt-4o-mini', 'gpt-5-mini'],  // thử lần lượt khi model trước lỗi 5xx\n\n  logKeep: 300               // số dòng log gần nhất giữ lại trong n8n\n};\n// =========================================================\n\nconst item = $input.first().json;\nlet route = '';\nconst u = String(item.webhookUrl || '');\nif (u.includes('acdi-gw-token')) route = 'token';\nelse if (u.includes('acdi-gw-chat')) route = 'chat';\nelse if (u.includes('acdi-gw-admin')) route = 'admin';\nif (!route) {\n  try {\n    if ($('Webhook Token').isExecuted) route = 'token';\n    else if ($('Webhook Chat').isExecuted) route = 'chat';\n    else if ($('Webhook Admin').isExecuted) route = 'admin';\n  } catch (e) { /* bỏ qua */ }\n}\nreturn [{ json: { route, cfg, req: item } }];\n"
+      },
+      "id": "d1b6e77b-975b-4a17-8398-01c36b8f1fe0",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "10ade2ef-18f8-4700-b8a5-b9bc01495f38",
+              "leftValue": "={{ $json.route === 'token' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "14418fca-3717-4a17-b89b-9eb42638a870",
+      "name": "Is Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e39aa22c-be0d-4d16-b08c-a5efbddd7b0d",
+              "leftValue": "={{ $json.route === 'chat' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1e49257-5b8d-417d-bd01-b727b9bf7be1",
+      "name": "Is Chat?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        680,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const C = $('Config').first().json;\nconst cfg = C.cfg, req = C.req || {};\nfunction parseBody(r) {\n  let b = r && r.body;\n  if (b && typeof b === 'object' && typeof b.data === 'string' && Object.keys(b).length === 1) b = b.data;\n  if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }\n  return (b && typeof b === 'object' && !Array.isArray(b)) ? b : {};\n}\nconst body = parseBody(req);\nconst headers = req.headers || {};\nconst rawOrigin = String(headers.origin || '').slice(0, 200);\nconst refOrigin = ((/^(https?:\\/\\/[^\\/?#]+)/.exec(String(headers.referer || headers.referrer || '')) || [])[1] || '').slice(0, 200);\n// Nếu proxy của hosting đổi/xóa Origin, dùng origin lấy từ Referer (trình duyệt tự gắn, JS không giả được)\nlet origin = rawOrigin;\nif (!cfg.allowedOrigins.includes(origin) && cfg.allowedOrigins.includes(refOrigin)) origin = refOrigin;\nconst ip = String(headers['x-forwarded-for'] || headers['x-real-ip'] || 'unknown').split(',')[0].trim().slice(0, 64);\nconst corsOrigin = cfg.allowedOrigins.includes(origin) ? origin : '';\n\n// Xác định \"web con\" gọi AI: domain + thư mục đầu tiên của page_url (vd. tiepbuoc.github.io/Pop-AI).\n// Origin do trình duyệt tự gắn nên đáng tin; page_url do web tự khai nên chỉ để ghi nhận.\nfunction where(origin, pageUrl) {\n  const host = origin.replace(/^https?:\\/\\//, '') || 'unknown';\n  const m = /^(https?:\\/\\/[^\\/?#]+)(\\/[^?#]*)?/.exec(String(pageUrl || ''));\n  if (!m || m[1] !== origin) return { site: (host + '/?').slice(0, 100), page: '' };\n  const path = m[2] || '/';\n  const seg = path.split('/').filter(Boolean)[0] || '';\n  return { site: (host + (seg ? '/' + seg : '')).slice(0, 100), page: (m[1] + path).slice(0, 200) };\n}\nconst loc = where(origin, typeof body.page_url === 'string' ? body.page_url.slice(0, 300) : '');\n\nfunction fail(status, error, reason, log = true) {\n  return [{ json: { ok: false, status, body: { error }, corsOrigin,\n    _log: log ? { endpoint: 'token', site: loc.site, page: loc.page, uid: '', status, reason, origin, rawOrigin, refOrigin, ip } : null } }];\n}\n\nconst sd = $getWorkflowStaticData('global');\nconst now = Date.now();\nsd.ipHitsT = sd.ipHitsT || {};\nconst hits = (sd.ipHitsT[ip] || []).filter(t => now - t < 60000);\nhits.push(now);\nsd.ipHitsT[ip] = hits;\nconst ks = Object.keys(sd.ipHitsT);\nif (ks.length > 3000) for (const k of ks) { if (!sd.ipHitsT[k].some(t => now - t < 60000)) delete sd.ipHitsT[k]; }\nif (hits.length > cfg.ipMaxPerMinToken) return fail(429, 'too_many_requests', 'ip_rate_limit', false);\n\nif (!cfg.allowedOrigins.includes(origin)) return fail(403, 'forbidden', 'origin_not_allowed');\nif (!cfg.enabled || sd.disabled === true) return fail(503, 'gateway_disabled', 'kill_switch');\nif (cfg.blockedSites.includes(loc.site)) return fail(403, 'forbidden', 'site_blocked');\nif (typeof body.id_token !== 'string' || body.id_token.length < 20 || body.id_token.length > 4096) return fail(400, 'bad_request', 'bad_id_token_format');\n\nreturn [{ json: { ok: true, idToken: body.id_token, loc, origin, ip, corsOrigin } }];\n"
+      },
+      "id": "cf386a0c-1c41-4918-afb7-0d1bef5df2ca",
+      "name": "Token Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f2ca5660-cc4d-4496-b4c4-5c26a5fa78ed",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7c332b36-3598-4728-b122-e4d68e09d50b",
+      "name": "Token OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        920,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={{ $('Config').first().json.cfg.firebaseApiKey }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ idToken: $('Token Parse').first().json.idToken }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "67e70ed4-555f-427e-9573-5aeb9a879a63",
+      "name": "Verify ID Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);\nconst cfg = $('Config').first().json.cfg;\nconst p = $('Token Parse').first().json;\nconst lk = $('Verify ID Token').first().json;\n\nfunction result(status, body, reason, uid) {\n  return [{ json: { ok: status === 200, status, body, corsOrigin: p.corsOrigin,\n    _log: { endpoint: 'token', site: p.loc.site, page: p.loc.page, uid: uid || '', status, reason, origin: p.origin, ip: p.ip } } }];\n}\n\n// 1) Firebase ID token phải hợp lệ (xác minh qua Firebase Auth, không đụng Firestore)\nconst user = (lk.statusCode === 200 && lk.body && Array.isArray(lk.body.users)) ? lk.body.users[0] : null;\nif (!user || !user.localId) return result(401, { error: 'invalid_id_token' }, 'invalid_id_token');\nif (user.disabled === true) return result(403, { error: 'forbidden' }, 'user_disabled', user.localId);\nconst uid = String(user.localId);\n\n// 2) Giới hạn số token cấp / giờ / người dùng / web\nconst sd = $getWorkflowStaticData('global');\nconst now = Date.now();\nsd.issued = sd.issued || {};\nconst key = p.loc.site + ':' + uid;\nconst arr = (sd.issued[key] || []).filter(t => now - t < 3600000);\nif (arr.length >= num(cfg.tokenIssuePerHour, 40)) return result(429, { error: 'too_many_requests' }, 'token_issue_limit', uid);\narr.push(now);\nsd.issued[key] = arr;\nconst ks = Object.keys(sd.issued);\nif (ks.length > 3000) for (const k of ks) { if (!sd.issued[k].some(t => now - t < 3600000)) delete sd.issued[k]; }\n\n// 3) Khoá ký token: tự sinh ở lần chạy đầu và lưu trong n8n (không nằm trong code, không cần cấu hình tay)\nif (typeof sd.jwtSecret !== 'string' || sd.jwtSecret.length < 32) sd.jwtSecret = crypto.randomBytes(32).toString('hex');\n\n// 4) Ký token HS256\nconst ttl = Math.min(900, Math.max(60, num(cfg.tokenTtlSec, 300)));\nconst iat = Math.floor(now / 1000);\nconst payload = { iss: 'acdi-gw', site: p.loc.site, uid, iat, exp: iat + ttl, jti: crypto.randomBytes(8).toString('hex') };\nconst b64u = o => Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64url');\nconst head = b64u({ alg: 'HS256', typ: 'JWT' });\nconst pay = b64u(payload);\nconst sig = crypto.createHmac('sha256', sd.jwtSecret).update(head + '.' + pay).digest('base64url');\n\nreturn result(200, { token: head + '.' + pay + '.' + sig, expires_in: ttl }, 'issued', uid);\n"
+      },
+      "id": "8ab3965b-a892-4ea4-a3e0-c12c0b346c08",
+      "name": "Token Issue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);\nconst C = $('Config').first().json;\nconst cfg = C.cfg, req = C.req || {};\nfunction parseBody(r) {\n  let b = r && r.body;\n  if (b && typeof b === 'object' && typeof b.data === 'string' && Object.keys(b).length === 1) b = b.data;\n  if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }\n  return (b && typeof b === 'object' && !Array.isArray(b)) ? b : {};\n}\nconst body = parseBody(req);\nconst headers = req.headers || {};\nconst rawOrigin = String(headers.origin || '').slice(0, 200);\nconst refOrigin = ((/^(https?:\\/\\/[^\\/?#]+)/.exec(String(headers.referer || headers.referrer || '')) || [])[1] || '').slice(0, 200);\n// Nếu proxy của hosting đổi/xóa Origin, dùng origin lấy từ Referer (trình duyệt tự gắn, JS không giả được)\nlet origin = rawOrigin;\nif (!cfg.allowedOrigins.includes(origin) && cfg.allowedOrigins.includes(refOrigin)) origin = refOrigin;\nconst ip = String(headers['x-forwarded-for'] || headers['x-real-ip'] || 'unknown').split(',')[0].trim().slice(0, 64);\nconst corsOrigin = cfg.allowedOrigins.includes(origin) ? origin : '';\nconst t0 = Date.now();\n\nfunction pageOf(origin, pageUrl) {\n  const m = /^(https?:\\/\\/[^\\/?#]+)(\\/[^?#]*)?/.exec(String(pageUrl || ''));\n  return (m && m[1] === origin) ? (m[1] + (m[2] || '/')).slice(0, 200) : '';\n}\nconst page = pageOf(origin, typeof body.page_url === 'string' ? body.page_url.slice(0, 300) : '');\n\n// Web con lấy từ token do n8n ký (đáng tin hơn page_url); đọc tạm trước khi xác thực chỉ để ghi log từ chối\nlet site = '';\ntry { site = String(JSON.parse(Buffer.from(String(body.token || '').split('.')[1], 'base64url').toString('utf8')).site || '').slice(0, 100); } catch (e) { site = ''; }\n\nfunction fail(status, error, reason, uid, log = true) {\n  return [{ json: { ok: false, status, body: { error }, corsOrigin,\n    _log: log ? { endpoint: 'chat', site, page, uid: uid || '', status, reason, origin, rawOrigin, refOrigin, ip, msgLen: String(body.message || '').length } : null } }];\n}\n\n// ---- 0) Giới hạn thô theo IP ----\nconst sd = $getWorkflowStaticData('global');\nconst now = Date.now();\nsd.ipHitsC = sd.ipHitsC || {};\nconst hits = (sd.ipHitsC[ip] || []).filter(t => now - t < 60000);\nhits.push(now);\nsd.ipHitsC[ip] = hits;\nconst iks = Object.keys(sd.ipHitsC);\nif (iks.length > 3000) for (const k of iks) { if (!sd.ipHitsC[k].some(t => now - t < 60000)) delete sd.ipHitsC[k]; }\nif (hits.length > cfg.ipMaxPerMinChat) return fail(429, 'too_many_requests', 'ip_rate_limit', '', false);\n\n// ---- 1) Origin, công tắc, web bị chặn ----\nif (!cfg.allowedOrigins.includes(origin)) return fail(403, 'forbidden', 'origin_not_allowed');\nif (!cfg.enabled || sd.disabled === true) return fail(503, 'gateway_disabled', 'kill_switch');\nif (typeof body.token !== 'string' || body.token.length < 20 || body.token.length > 2000) return fail(401, 'invalid_token', 'missing_token');\nif (typeof sd.jwtSecret !== 'string' || sd.jwtSecret.length < 32) return fail(401, 'invalid_token', 'no_secret_yet');\n\n// ---- 2) Xác thực token (HS256) ----\nconst parts = body.token.split('.');\nif (parts.length !== 3) return fail(401, 'invalid_token', 'malformed_token');\nlet hdr, pl;\ntry {\n  hdr = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));\n  pl = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));\n} catch (e) { return fail(401, 'invalid_token', 'malformed_token'); }\nif (!hdr || hdr.alg !== 'HS256') return fail(401, 'invalid_token', 'bad_alg');\nconst expected = crypto.createHmac('sha256', sd.jwtSecret).update(parts[0] + '.' + parts[1]).digest();\nlet given;\ntry { given = Buffer.from(parts[2], 'base64url'); } catch (e) { given = Buffer.alloc(0); }\nif (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return fail(401, 'invalid_token', 'bad_signature');\nif (pl.iss !== 'acdi-gw' || typeof pl.site !== 'string' || !pl.site || typeof pl.uid !== 'string' || !pl.uid) return fail(401, 'invalid_token', 'bad_claims');\nsite = pl.site.slice(0, 100);\nif (typeof pl.exp !== 'number' || pl.exp * 1000 <= Date.now()) return fail(401, 'token_expired', 'token_expired', pl.uid);\nconst uid = pl.uid;\nif (cfg.blockedSites.includes(site)) return fail(403, 'forbidden', 'site_blocked', uid);\n\n// ---- 3) Kiểm tra nội dung & dựng prompt (prompt do SERVER quyết định) ----\nconst MODES = (cfg.modes && typeof cfg.modes === 'object') ? cfg.modes : {};\nconst mode = typeof body.mode === 'string' ? body.mode : '';\nif (!Object.prototype.hasOwnProperty.call(MODES, mode)) return fail(400, 'bad_request', 'unknown_mode', uid);\nconst mc = MODES[mode] || {};\n\n// Chế độ soạn đề: cần mật khẩu admin (kiểm tra ở server, không chỉ ở trình duyệt)\nif (mc.requireAdminSecret && String(cfg.generateKey || '').length >= 4) {\n  const sha = s => crypto.createHash('sha256').update(String(s)).digest();\n  if (!crypto.timingSafeEqual(sha(typeof body.admin_secret === 'string' ? body.admin_secret : ''), sha(cfg.generateKey))) return fail(403, 'forbidden', 'bad_admin_secret', uid);\n}\n\nconst P = (body.params && typeof body.params === 'object' && !Array.isArray(body.params)) ? body.params : null;\nif (!P) return fail(400, 'bad_request', 'bad_params', uid);\nconst str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');\nconst numIn = (v, lo, hi) => (typeof v === 'number' && isFinite(v) && v >= lo && v <= hi) ? v : null;\nconst schoolLevel = P.schoolLevel === 'thpt' ? 'thpt' : 'thcs';\nconst grade = str(String(P.grade == null ? '' : P.grade), 10);\nif (!/^[0-9A-Za-z]{1,10}$/.test(grade)) return fail(400, 'bad_request', 'bad_grade', uid);\n\nconst LEVEL_INFO = {\n  1: { title: 'Sử dụng AI có kiểm soát' },\n  2: { title: 'Có dấu hiệu dựa vào AI' },\n  3: { title: 'Lệ thuộc AI' },\n  4: { title: 'Nguy cơ lệ thuộc AI cao' },\n};\nconst SUBJECT_LABELS = { math: 'Toán', physics: 'Lý', chemistry: 'Hóa', literature: 'Văn', english: 'Anh', other: 'Môn khác' };\n\nfunction essayFitLabel(score) {\n  const s = Number(score);\n  if (!Number.isFinite(s)) return 'chưa có dữ liệu';\n  if (s <= 20) return 'rất phù hợp, thể hiện khả năng tự lập luận tốt';\n  if (s <= 40) return 'khá phù hợp, còn vài chỗ có thể tự lập luận thêm';\n  if (s <= 65) return 'có phần hạn chế, còn dựa khá nhiều vào gợi ý sẵn có';\n  if (s <= 85) return 'hạn chế rõ, thiếu ý chính/lập luận của riêng mình';\n  return 'chưa phù hợp, gần như chưa thể hiện được tư duy độc lập';\n}\nfunction scenarioCategoryLabel(title) {\n  return String(title || '').replace(/^Tình huống\\s*\\d+\\s*[·.\\-–]?\\s*/i, '').trim() || 'Tình huống tự luận';\n}\n\nconst GEN_TEMPLATE = (criteria) => `Bạn là chuyên gia thiết kế công cụ đo lường tâm lý giáo dục, được giao soạn MỘT bộ đề ACDI Check\n(đo Chỉ số lệ thuộc nhận thức vào AI của học sinh) phù hợp với nhóm đối tượng sau:\n- Cấp học: ${criteria.schoolLevel === \"thpt\" ? \"Trung học phổ thông (THPT)\" : \"Trung học cơ sở (THCS)\"}\n- Khối lớp: ${criteria.grade}\n- Môn học thường dùng AI: ${(criteria.subjects || []).join(\", \") || \"không rõ\"}\n\nYÊU CẦU BẮT BUỘC — áp dụng GIỐNG NHAU cho MỌI lần soạn đề, không tự thay đổi cấu trúc hay cách hiểu:\n\n1. Soạn đúng 5 NHÓM CHỈ BÁO theo đúng 5 khoá \"key\" và Ý NGHĨA ĐO LƯỜNG cố định sau (giữ nguyên\n   key, được tự viết lại title/desc/câu hỏi cho phù hợp lứa tuổi và môn học nêu trên):\n   - \"start\" (Phụ thuộc khi bắt đầu nhiệm vụ): mức độ cần AI để xác định cách làm/khởi động nhiệm vụ.\n   - \"idea\" (Phụ thuộc về ý tưởng): khả năng tự hình thành ý tưởng, dàn ý, phương án giải quyết.\n   - \"process\" (Phụ thuộc trong xử lí nhiệm vụ): mức độ giao cho AI phân tích, lập luận, hoàn thành sản phẩm.\n   - \"trust\" (Phụ thuộc vào kết quả của AI): mức độ tin tưởng, chấp nhận câu trả lời AI mà không kiểm tra.\n   - \"independence\" (Khả năng hoạt động khi không có AI): khả năng ghi nhớ, giải thích, tự hoàn thành khi không có AI.\n   BẮT BUỘC soạn ĐỦ 25 câu (5 nhóm × 5 câu), TOÀN BỘ do bạn tự viết — không được bỏ trống hay rút gọn.\n   PHÂN BỐ NỘI DUNG ĐỀU trong từng nhóm: 5 câu của MỘT nhóm phải đo 5 KHÍA CẠNH KHÁC NHAU của cùng\n   một chỉ báo (không được viết 5 câu gần như lặp lại cùng một ý), để điểm trung bình của nhóm phản\n   ánh đúng nhiều mặt của hành vi, không bị lệch vì phần lớn câu hỏi trùng ý nhau.\n2. Mỗi nhóm có đúng 5 câu hỏi kiểu Likert 5 mức (từ \"Hoàn toàn không đúng\" đến \"Hoàn toàn đúng\"),\n   mỗi câu có \"id\" duy nhất dạng \"g{số nhóm 1-5}q{số câu 1-5}\" (ví dụ g1q1..g1q5, g2q1..g2q5,...).\n3. Trường \"reverse\" — ĐÂY LÀ CHỖ DỄ SAI NHẤT, PHẢI TỰ KIỂM TRA LẠI TỪNG CÂU TRƯỚC KHI TRẢ VỀ:\n   - Mặc định \"reverse: false\" cho 4 nhóm đầu (\"start\",\"idea\",\"process\",\"trust\") — NGHĨA LÀ mọi câu\n     hỏi trong 4 nhóm này BẮT BUỘC phải viết theo hướng \"câu đồng ý (chọn mức cao) = lệ thuộc AI\n     NHIỀU HƠN\". TUYỆT ĐỐI KHÔNG được viết một câu theo hướng ngược lại (ví dụ ca ngợi sự độc lập,\n     \"tôi tự nghĩ ra ý tưởng trước khi hỏi AI\") rồi vẫn để reverse:false — làm vậy học sinh trả lời\n     tốt (độc lập) sẽ bị chấm nhầm thành lệ thuộc cao, khiến điểm nhóm đó luôn bị đẩy lên rất cao\n     một cách SAI LỆCH. Nếu bạn thấy một câu tự nhiên phải viết theo hướng độc lập, hãy VIẾT LẠI câu\n     đó theo hướng lệ thuộc (ví dụ đổi thành \"tôi khó tự nghĩ ra ý tưởng nếu chưa hỏi AI\") thay vì đặt\n     reverse:true cho nhóm này.\n   - \"reverse: true\" CHỈ dùng cho TẤT CẢ 5 câu của nhóm \"independence\" (vì nhóm này đo năng lực độc\n     lập, Likert càng cao thì càng ÍT lệ thuộc).\n   - Trước khi trả JSON, tự rà soát: với mỗi câu reverse:false, \"chọn mức 5 (Hoàn toàn đúng)\" có\n     đúng nghĩa là \"lệ thuộc AI nhiều nhất\" không? Nếu không đúng, phải sửa lại cách diễn đạt câu đó.\n4. Có thể lồng ví dụ, ngữ cảnh gắn với môn học/khối lớp nêu trên để học sinh dễ liên hệ, nhưng Ý NGHĨA\n   ĐO LƯỜNG của mỗi nhóm phải giữ đúng như mô tả ở trên — không được tạo câu hỏi đo sai nhóm.\n5. Soạn đúng 5 TÌNH HUỐNG TỰ LUẬN, id lần lượt \"s1\"..\"s5\", TẤT CẢ đều type \"text\" (không dùng\n   type \"choice\" hay \"number\" nữa) — mỗi tình huống yêu cầu học sinh TỰ VIẾT câu trả lời bằng lời\n   của mình (không phải chọn đáp án có sẵn), để đánh giá đúng khả năng tư duy độc lập thay vì đoán:\n   - s1: một câu trả lời của AI có chứa LỖI (nội dung liên quan môn học nêu trên nếu hợp lý, trong\n     trường \"aiAnswer\"); yêu cầu học sinh chỉ ra lỗi đó là gì và sửa lại cho đúng bằng lời của mình.\n   - s2: tình huống cần kiểm chứng một thông tin AI đưa ra; yêu cầu học sinh nêu cách/nguồn mình sẽ\n     dùng để kiểm chứng và giải thích ngắn gọn vì sao.\n   - s3: có \"aiAnswer\" là một đoạn AI giải thích một khái niệm liên quan môn học nêu trên (3-4 câu);\n     yêu cầu học sinh viết lại cách hiểu bằng lời riêng của mình (không được chép lại nguyên văn).\n   - s4: một tình huống/bài tập nhỏ liên quan môn học, yêu cầu học sinh tự trình bày CÁCH LÀM (các\n     bước suy luận) của mình, không chỉ đưa ra đáp số.\n   - s5: một bài toán/câu hỏi áp dụng ngắn, KHÔNG dùng AI/máy tính/tra cứu, yêu cầu học sinh tự giải\n     và trình bày lại cách giải bằng lời.\n   ĐỘ KHÓ của nội dung s1-s5 phải tăng dần theo khối lớp đã cho ở trên (nội dung dành cho lớp 12 phải\n   khó/nâng cao hơn một chút so với nội dung cùng dạng dành cho lớp 10, và khó hơn khối THCS); vẫn phải\n   phù hợp môn học nêu trên và vừa sức để học sinh khối lớp đó có thể tự làm được nếu không dùng AI.\n\n   MỖI tình huống BẮT BUỘC phải có kèm \"đáp án\"/rubric để HỆ THỐNG (không phải AI) tự động chấm điểm\n   NGUY CƠ LỆ THUỘC AI (0-100, càng cao càng đáng lo) khi học sinh nộp bài sau này, gồm 2 trường:\n   - \"keyPoints\": mảng 2-4 ý CHÍNH mà một câu trả lời TỐT (hiểu đúng, tự lập luận được) cần thể hiện.\n     Mỗi phần tử có dạng { \"label\": \"mô tả ngắn ý đó\", \"keywords\": [ 3-6 từ/cụm từ tiếng Việt, không\n     dấu câu, là các từ khoá/đồng nghĩa mà một câu trả lời đúng thường sẽ chứa MỘT TRONG SỐ ĐÓ ] }.\n   - \"riskKeywords\": mảng 3-6 cụm từ/từ khoá (chuỗi ngắn) cho thấy dấu hiệu RỦI RO cao khi xuất hiện\n     trong câu trả lời của học sinh — ví dụ thể hiện học sinh không tự hiểu, chỉ đoán, dựa hẳn vào AI,\n     hoặc trả lời cho có (ví dụ: \"không biết\", \"AI nói vậy\", \"chắc là đúng\", \"em không rõ\", \"copy\").\n6. CÂN BẰNG ĐỘ RỘNG CỦA THANG ĐIỂM — RẤT QUAN TRỌNG: hệ thống chấm điểm tự luận (thuần công thức\n   JS, không dùng AI) tính điểm nguy cơ theo TỈ LỆ số \"keyPoints\" mà học sinh nhắc trúng. Nếu bạn\n   viết các \"keyPoints\" quá tổng quát, quá dễ đoán trúng bằng bất kỳ câu trả lời chung chung nào,\n   MỌI học sinh (kể cả học sinh không thực sự hiểu bài) đều sẽ vô tình đạt điểm thấp giả tạo; ngược\n   lại nếu \"keyPoints\"/\"keywords\" quá hẹp, quá khó đoán trúng đúng từ, học sinh hiểu bài thật cũng\n   không đạt điểm cao (điểm nguy cơ thấp) được. Để điểm số phản ánh ĐÚNG và CÔNG BẰNG sự đa dạng\n   thực tế của câu trả lời học sinh (bao gồm cả trường hợp học sinh xuất sắc lẫn học sinh gần như\n   không tự làm), khi soạn \"keyPoints\" và \"riskKeywords\" hãy:\n   - Chọn keyPoints là những Ý THỰC SỰ CẦN HIỂU BÀI mới nêu được (không phải từ ngữ ai cũng đoán ra).\n   - Với mỗi keyPoint, liệt kê đủ 3-6 từ khoá/đồng nghĩa THƯỜNG GẶP trong cách học sinh diễn đạt\n     (kể cả cách viết tắt, viết sai chính tả nhẹ, từ đồng nghĩa) để không bỏ sót câu trả lời đúng\n     nhưng diễn đạt khác, đồng thời không quá rộng khiến câu trả lời sai cũng khớp được.\n   - riskKeywords nên bao phủ cả cách nói lười biếng/qua loa phổ biến ở lứa tuổi này (ví dụ dạng\n     \"không biết\", \"chắc vậy\", \"AI nói đúng mà\", \"khỏi cần kiểm tra\") lẫn dấu hiệu sao chép nguyên\n     văn không đổi.\n   Làm đúng như trên thì công thức chấm điểm tự nó đã có thể cho ra điểm trải dài toàn thang 0-100\n   tuỳ chất lượng câu trả lời thực tế — kể cả các trường hợp cực trị (dưới 10 với câu trả lời xuất\n   sắc, tự lập luận đầy đủ; trên 90 với câu trả lời hời hợt/sao chép) — bạn KHÔNG cần và KHÔNG được\n   tự ý \"nới lỏng\" hay \"siết chặt\" giả tạo để cố tạo ra điểm cực trị; chỉ cần rubric phản ánh đúng\n   thực chất là công thức sẽ tự cho kết quả công bằng.\n\n7. VÍ DỤ MẪU (chỉ để bạn tham khảo văn phong, độ chi tiết và cách soạn rubric — KHÔNG được chép lại\n   nguyên văn nội dung ví dụ này vào đề bạn soạn, phải tự viết nội dung mới phù hợp với cấp học/khối\n   lớp/môn học đã cho ở trên):\n\n   Ví dụ 1 nhóm chỉ báo (nhóm \"start\"):\n   {\n     \"key\": \"start\", \"title\": \"Phụ thuộc khi bắt đầu nhiệm vụ\",\n     \"desc\": \"Mức độ em cần AI để xác định cách làm hoặc khởi động một nhiệm vụ.\",\n     \"questions\": [\n       { \"id\": \"g1q1\", \"text\": \"Khi nhận một bài tập Hoá mới, em thường mở AI hỏi cách làm trước khi tự đọc kỹ đề.\", \"reverse\": false },\n       { \"id\": \"g1q2\", \"text\": \"Em khó hình dung nên bắt đầu từ đâu nếu chưa có AI gợi ý hướng làm.\", \"reverse\": false },\n       { \"id\": \"g1q3\", \"text\": \"Em thường chờ AI đưa ra các bước giải trước rồi mới bắt tay vào làm theo.\", \"reverse\": false },\n       { \"id\": \"g1q4\", \"text\": \"Em cảm thấy khá lo lắng nếu phải tự mở đầu một bài tập mà không có AI hỗ trợ.\", \"reverse\": false },\n       { \"id\": \"g1q5\", \"text\": \"Em ít khi dành thời gian đọc kỹ đề bài trước khi mở công cụ AI ra hỏi.\", \"reverse\": false }\n     ]\n   }\n\n   Ví dụ 1 tình huống tự luận (dạng s1 — phát hiện lỗi):\n   {\n     \"id\": \"s1\", \"title\": \"Tình huống 1 · Phát hiện lỗi trong câu trả lời AI\",\n     \"prompt\": \"AI trả lời câu hỏi \\\\\"Tính nồng độ mol của dung dịch chứa 0,5 mol NaCl trong 2 lít nước\\\\\" như sau:\",\n     \"aiAnswer\": \"\\\\\"Nồng độ mol là 0,5 x 2 = 1 mol/l.\\\\\"\",\n     \"question\": \"Câu trả lời trên có lỗi gì? Hãy chỉ ra lỗi và tính lại cho đúng bằng lời của em.\",\n     \"type\": \"text\",\n     \"keyPoints\": [\n       { \"label\": \"Chỉ ra phép tính sai (phải chia, không phải nhân)\", \"keywords\": [\"chia\", \"phép chia\", \"không phải nhân\", \"0,5 chia 2\", \"0.5 chia 2\"] },\n       { \"label\": \"Đưa ra đáp số đúng 0,25 mol/l\", \"keywords\": [\"0,25\", \"0.25\"] }\n     ],\n     \"riskKeywords\": [\"không biết\", \"em không rõ\", \"chắc là đúng\", \"ai nói vậy\", \"đúng rồi\", \"không có lỗi\"]\n   }\n\n8. CHỈ trả về JSON hợp lệ đúng schema bên dưới. TUYỆT ĐỐI không kèm giải thích, không markdown,\n   không dấu backtick, không có chữ nào ngoài JSON.\n\nSCHEMA JSON:\n{\n  \"groups\": [\n    { \"key\": \"start\", \"title\": \"...\", \"desc\": \"...\", \"questions\": [ { \"id\": \"g1q1\", \"text\": \"...\", \"reverse\": false }, ... đúng 5 câu ... ] },\n    ... đúng 5 nhóm theo thứ tự start, idea, process, trust, independence ...\n  ],\n  \"scenarios\": [\n    { \"id\": \"s1\", \"title\": \"...\", \"prompt\": \"...\", \"aiAnswer\": \"...\", \"question\": \"...\", \"type\": \"text\",\n      \"keyPoints\": [ { \"label\": \"...\", \"keywords\": [\"...\", \"...\"] }, ... 2-4 ý ... ],\n      \"riskKeywords\": [\"...\", \"...\", \"...\"] },\n    ... đúng 5 tình huống s1..s5, TẤT CẢ type \"text\", đều có \"keyPoints\" và \"riskKeywords\" như trên\n    (\"aiAnswer\" chỉ bắt buộc với s1 và s3, các tình huống khác có thể bỏ trường này nếu không cần) ...\n  ]\n}`;\n\nlet prompt = '';\nif (mode === 'feedback') {\n  const acdiScore = numIn(P.acdiScore, 0, 100);\n  const level = Math.round(Number(P.level));\n  const questionnaireScore = numIn(P.questionnaireScore, 0, 100);\n  const scenarioScore = numIn(P.scenarioScore, 0, 100);\n  if (acdiScore === null || !LEVEL_INFO[level]) return fail(400, 'bad_request', 'bad_scores', uid);\n  if (!Array.isArray(P.groups) || P.groups.length < 1 || P.groups.length > 5) return fail(400, 'bad_request', 'bad_groups', uid);\n  const groups = [];\n  for (const g of P.groups) {\n    const t = str(g && g.title, 120), sc = numIn(g && g.score, 0, 100);\n    if (!t || sc === null) return fail(400, 'bad_request', 'bad_groups', uid);\n    groups.push({ title: t, score: sc });\n  }\n  const scenarios = [];\n  for (const s of (Array.isArray(P.scenarios) ? P.scenarios.slice(0, 5) : [])) {\n    scenarios.push({ title: str(s && s.title, 200), score: numIn(s && s.score, 0, 100) });\n  }\n  const rec = { highestRiskGroup: str(P.highestRiskGroup, 120), bestMaintainedGroup: str(P.bestMaintainedGroup, 120) };\n  if (!rec.highestRiskGroup || !rec.bestMaintainedGroup) return fail(400, 'bad_request', 'bad_rec', uid);\n  const info = { schoolLevel, grade };\n  const li = LEVEL_INFO[level];\n  const groupSummary = groups.map(g => `- ${g.title}: điểm ${g.score}/100`).join('\\n');\n  const scenarioSummary = scenarios.map((sc, i) => `- Tình huống ${i + 1} (${scenarioCategoryLabel(sc.title)}): độ phù hợp câu trả lời — ${essayFitLabel(sc.score)} (điểm nguy cơ hệ thống đã chấm: ${sc.score == null ? '-' : sc.score}/100)`).join('\\n');\nconst prompt_ = `Bạn là chuyên gia giáo dục, viết NHẬN XÉT và LỜI KHUYÊN cá nhân hoá cho một học sinh vừa\nlàm xong bài khảo sát ACDI Check (đo mức độ lệ thuộc nhận thức vào AI trong học tập).\n\nQUAN TRỌNG: điểm số dưới đây ĐÃ ĐƯỢC HỆ THỐNG CHẤM CỐ ĐỊNH XONG, bạn KHÔNG được thay đổi hay bàn luận\nlại về tính đúng/sai của điểm số. Bạn CŨNG KHÔNG được hỏi lại hay suy đoán về nội dung đề bài/câu trả\nlời cụ thể của học sinh — bạn CHỈ nhận được điểm số và nhãn tổng quát bên dưới, hãy viết nhận xét dựa\nhoàn toàn vào các con số và nhãn đó, không bịa thêm chi tiết nội dung cụ thể nào không có trong dữ liệu.\n\nThông tin học sinh: cấp học ${info?.schoolLevel === \"thpt\" ? \"THPT\" : \"THCS\"}, khối lớp ${info?.grade}.\nĐiểm ACDI tổng: ${acdiScore}/100 — Mức ${level} (${li.title}).\nĐiểm thành phần: bảng hỏi tự đánh giá ${Math.round((questionnaireScore ?? 0) * 10) / 10}/100, tình huống tự luận ${Math.round((scenarioScore ?? 0) * 10) / 10}/100.\n\nĐiểm 5 nhóm chỉ báo (lĩnh vực):\n${groupSummary}\n\nHỆ THỐNG ĐÃ XÁC ĐỊNH SẴN (bằng công thức, không phải bạn quyết định):\n- Nhóm CÓ NGUY CƠ CAO NHẤT là: \"${rec.highestRiskGroup}\"\n- Nhóm DUY TRÌ TỐT NHẤT là: \"${rec.bestMaintainedGroup}\"\nBạn BẮT BUỘC phải viết \"highestRiskComment\" về ĐÚNG nhóm \"${rec.highestRiskGroup}\" và \"strengthComment\" về\nĐÚNG nhóm \"${rec.bestMaintainedGroup}\" nêu trên — KHÔNG được tự chọn nhóm khác để bàn luận, kể cả khi bạn\nthấy một nhóm khác có vẻ đáng chú ý hơn.\n\nĐộ phù hợp của từng tình huống tự luận (chỉ là nhãn tổng quát suy ra từ điểm, không phải nội dung gốc):\n${scenarioSummary}\n\nHãy trả lời CHỈ bằng JSON đúng schema sau, viết bằng tiếng Việt, giọng văn gần gũi, mang tính xây dựng,\nkhông phán xét, dựa trên các điểm số/nhãn phía trên (không nói chung chung, nhưng cũng không bịa ra chi\ntiết nội dung câu trả lời cụ thể mà bạn không có):\n{\n  \"highestRiskComment\": \"1-2 câu nhận xét cụ thể về nhóm \\\"${rec.highestRiskGroup}\\\", dựa trên các câu trả lời liên quan\",\n  \"strengthComment\": \"1-2 câu nhận xét về nhóm \\\"${rec.bestMaintainedGroup}\\\"\",\n  \"advice\": \"2-4 câu lời khuyên cụ thể, khả thi, phù hợp lứa tuổi/khối lớp, giúp học sinh cải thiện nhóm \\\"${rec.highestRiskGroup}\\\"\"\n}\nYÊU CẦU VỀ VĂN PHONG — RẤT QUAN TRỌNG:\n- Viết văn tự nhiên, dễ hiểu với học sinh, gọi tên nhóm CHỈ bằng tên tiếng Việt ở trên (ví dụ: \"${rec.highestRiskGroup}\").\n- TUYỆT ĐỐI KHÔNG được đưa vào câu trả lời bất kỳ nhãn kỹ thuật/mã nội bộ nào, ví dụ: \"key:...\", \"g1q2\",\n  \"s3\", tên biến, hay số liệu đặt trong ngoặc kiểu \"(key:idea=20)\". Nếu cần nêu điểm số, chỉ viết dạng\n  văn xuôi bình thường (ví dụ: \"điểm 20/100\"), không dùng ký hiệu kỹ thuật.\nCHỈ trả về JSON, không kèm giải thích, không markdown, không dấu backtick.`;\n  prompt = prompt_;\n} else if (mode === 'generate_test') {\n  const subs = (Array.isArray(P.subjects) ? P.subjects : []).filter(s => typeof s === 'string' && Object.prototype.hasOwnProperty.call(SUBJECT_LABELS, s)).slice(0, 6);\n  if (!subs.length) return fail(400, 'bad_request', 'bad_subjects', uid);\n  prompt = GEN_TEMPLATE({ schoolLevel, grade, subjects: subs.map(s => SUBJECT_LABELS[s]) });\n}\nif (!prompt) return fail(400, 'bad_request', 'empty_prompt', uid);\n\n// ---- 4) Giới hạn tần suất & hạn mức (đếm trong n8n) ----\nconst dayKey = new Date(now + 7 * 3600 * 1000).toISOString().slice(0, 10); // theo giờ VN\nif (!sd.day || sd.day.key !== dayKey) sd.day = { key: dayKey, requests: 0, tokens: 0, sites: {}, users: {} };\nconst day = sd.day;\nconst sk = (Object.keys(day.sites).length >= 300 && !day.sites[site]) ? '(other)' : site;\nconst wd = day.sites[sk] = day.sites[sk] || { requests: 0, tokens: 0 };\nconst ud = day.users[uid] = day.users[uid] || { requests: 0, byMode: {} };\nud.byMode = ud.byMode || {};\n\nif (day.requests >= num(cfg.dailyRequestCap, 1500) || day.tokens >= num(cfg.dailyTokenCap, 1000000)) return fail(503, 'daily_cap_reached', 'global_daily_cap', uid);\nif ((cfg.perSiteDailyRequestCap > 0 && wd.requests >= cfg.perSiteDailyRequestCap) || (cfg.perSiteDailyTokenCap > 0 && wd.tokens >= cfg.perSiteDailyTokenCap)) return fail(429, 'web_daily_cap', 'site_daily_cap', uid);\nif ((ud.byMode[mode] || 0) >= num(mc.perUserPerDay, 30)) return fail(429, 'user_daily_limit', 'user_daily_limit', uid);\n\nsd.min = sd.min || {};\nconst mk = site + ':' + uid;\nconst recent = (sd.min[mk] || []).filter(t => now - t < 60000);\nif (recent.length >= num(cfg.perUserPerMin, 8)) return fail(429, 'user_rate_limit', 'user_rate_limit', uid);\nrecent.push(now);\nsd.min[mk] = recent;\nconst mks = Object.keys(sd.min);\nif (mks.length > 3000) for (const k of mks) { if (!sd.min[k].some(t => now - t < 60000)) delete sd.min[k]; }\n\nday.requests++; wd.requests++; ud.requests++; ud.byMode[mode] = (ud.byMode[mode] || 0) + 1;\n\n// ---- 5) Tham số gọi LLM (do SERVER quyết định) ----\nconst okModel = m => typeof m === 'string' && /^[A-Za-z0-9._:-]{1,60}$/.test(m);\nlet models = (Array.isArray(cfg.models) && cfg.models.filter(okModel).length) ? cfg.models.filter(okModel) : ['gpt-4o-mini'];\nmodels = models.slice(0, 3);\nwhile (models.length < 3) models.push(models[models.length - 1]);\nconst maxTokens = Math.min(12000, Math.max(100, num(mc.maxTokens, 4000)));\n\nreturn [{ json: {\n  ok: true, status: 200, uid, site, page, origin, ip, mode, msgLen: JSON.stringify(P).length, t0, models, maxTokens, corsOrigin,\n  messages: [{ role: 'user', content: prompt }]\n} }];\n"
+      },
+      "id": "e9feeda3-dd51-4703-bbd9-9bab0dcc1009",
+      "name": "Chat Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b77f63d1-3e79-457a-875e-53ca511f44df",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7f4a6155-67e4-4924-bc38-555784147c08",
+      "name": "Gate OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1140,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.shopaikey.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Chat Gate').first().json.models[0], messages: $('Chat Gate').first().json.messages, max_tokens: $('Chat Gate').first().json.maxTokens }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 100000
+        }
+      },
+      "id": "070d7f67-7e31-4bf3-b507-b3fc8d90f047",
+      "name": "LLM 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        420
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "LLM API Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.shopaikey.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Chat Gate').first().json.models[1], messages: $('Chat Gate').first().json.messages, max_tokens: $('Chat Gate').first().json.maxTokens }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 100000
+        }
+      },
+      "id": "e12d88f4-9804-4651-bbf8-823482971bea",
+      "name": "LLM 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        340
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "LLM API Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.shopaikey.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Chat Gate').first().json.models[2], messages: $('Chat Gate').first().json.messages, max_tokens: $('Chat Gate').first().json.maxTokens }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 100000
+        }
+      },
+      "id": "f8fd843c-2a82-47ea-998a-80fa844a8737",
+      "name": "LLM 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "LLM API Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c714ec1b-7439-4de8-a003-ceea6d3b5ccc",
+              "leftValue": "={{ !$json.statusCode || $json.statusCode >= 500 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d534ceee-0885-464d-a646-f728c1a57357",
+      "name": "Retry 1?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1580,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1e0bfb82-f407-4cea-b1f3-9b1b26a19da7",
+              "leftValue": "={{ !$json.statusCode || $json.statusCode >= 500 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e252690b-ad7b-482d-a00e-ed4817603219",
+      "name": "Retry 2?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2020,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const v = $('Chat Gate').first().json;\nconst r = $input.first().json;\n\nconst ok200 = r.statusCode === 200 && r.body && typeof r.body === 'object' && Array.isArray(r.body.choices);\nconst choice = ok200 ? r.body.choices[0] : null;\nlet text = '';\nif (choice && choice.message && typeof choice.message.content === 'string') text = choice.message.content.trim();\nelse if (choice && typeof choice.text === 'string') text = choice.text.trim();\n\nconst usage = (r.body && typeof r.body === 'object' && r.body.usage) || {};\nconst total = Number(usage.total_tokens) || 0;\nconst status = text ? 200 : 502;\nconst reason = text ? 'ok'\n  : (ok200 ? 'empty_completion_' + String((choice && choice.finish_reason) || 'unknown')\n           : 'llm_http_' + (r.statusCode || 'none'));\n\nreturn [{ json: {\n  ok: !!text, status,\n  body: text ? { reply: text } : { error: 'llm_unavailable' },\n  corsOrigin: v.corsOrigin,\n  _log: {\n    endpoint: 'chat', mode: v.mode || '', site: v.site, page: v.page, uid: v.uid, status, reason, origin: v.origin, ip: v.ip,\n    model: (r.body && r.body.model) || '', promptTokens: Number(usage.prompt_tokens) || 0,\n    completionTokens: Number(usage.completion_tokens) || 0, totalTokens: total,\n    latencyMs: Date.now() - v.t0, msgLen: v.msgLen\n  }\n} }];\n"
+      },
+      "id": "f238e2a2-b90d-4e95-b252-292e383101c9",
+      "name": "Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2460,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst C = $('Config').first().json;\nconst cfg = C.cfg, req = C.req || {};\nconst headers = req.headers || {};\nfunction parseBody(r) {\n  let b = r && r.body;\n  if (b && typeof b === 'object' && typeof b.data === 'string' && Object.keys(b).length === 1) b = b.data;\n  if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }\n  return (b && typeof b === 'object' && !Array.isArray(b)) ? b : {};\n}\nconst body = parseBody(req);\nconst out = (status, b) => [{ json: { ok: status === 200, status, body: b, corsOrigin: '' } }];\n\nconst adminKey = String(cfg.adminKey || '');\nif (adminKey.length < 16) return out(404, { error: 'not_found' });   // chưa cấu hình adminKey -> endpoint coi như không tồn tại\nconst sha = s => crypto.createHash('sha256').update(String(s)).digest();\nif (!crypto.timingSafeEqual(sha(headers['x-admin-key'] || ''), sha(adminKey))) return out(403, { error: 'forbidden' });\n\nconst sd = $getWorkflowStaticData('global');\nconst action = String(body.action || 'stats');\n\nif (action === 'disable') { sd.disabled = true; return out(200, { disabled: true }); }\nif (action === 'enable') { sd.disabled = false; return out(200, { disabled: false }); }\nif (action === 'logs') {\n  const limit = Math.min(300, Math.max(1, Number(body.limit) || 50));\n  let logs = (sd.logs || []).slice();\n  if (typeof body.site === 'string' && body.site) logs = logs.filter(x => x.site === body.site);\n  return out(200, { count: logs.length, logs: logs.slice(-limit).reverse() });\n}\nif (action === 'stats') {\n  const sites = Object.entries(sd.sites || {}).map(([site, s]) => ({\n    site, chatOk: s.chatOk, tokenOk: s.tokenOk, denied: s.denied, tokens: s.tokens,\n    first: s.first, lastSeen: s.lastSeen, pages: s.pages, days: s.days\n  })).sort((a, b) => String(b.lastSeen).localeCompare(String(a.lastSeen)));\n  return out(200, { disabled: sd.disabled === true, today: sd.day ? { key: sd.day.key, requests: sd.day.requests, tokens: sd.day.tokens, sites: sd.day.sites } : null, sites });\n}\nreturn out(400, { error: 'unknown_action' });\n"
+      },
+      "id": "4ae572c6-97d6-460b-8d94-e755f447a5e8",
+      "name": "Admin",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ghi nhận mọi request (kể cả bị từ chối) vào bộ nhớ của n8n: log gần nhất + thống kê theo từng web con.\nconst j = $input.first().json;\nconst l = j._log;\nif (l) {\n  const cfg = $('Config').first().json.cfg;\n  const sd = $getWorkflowStaticData('global');\n  const nowD = new Date();\n  const dayKey = new Date(nowD.getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10); // giờ VN\n  const iso = nowD.toISOString();\n\n  // Cộng token đã dùng vào hạn mức trong ngày\n  const total = Number(l.totalTokens) || 0;\n  if (l.endpoint === 'chat' && total && sd.day && sd.day.key === dayKey) {\n    sd.day.tokens = (sd.day.tokens || 0) + total;\n    const wd = sd.day.sites && (sd.day.sites[l.site] || sd.day.sites['(other)']);\n    if (wd) wd.tokens = (wd.tokens || 0) + total;\n  }\n\n  // Thống kê theo web con\n  sd.sites = sd.sites || {};\n  let sk = String(l.site || '(unknown)');\n  if (!sd.sites[sk] && Object.keys(sd.sites).length >= 500) sk = '(other)';\n  const s = sd.sites[sk] = sd.sites[sk] || { first: iso, tokenOk: 0, chatOk: 0, denied: 0, tokens: 0, lastSeen: '', pages: {}, days: {} };\n  if (l.status === 200) { if (l.endpoint === 'token') s.tokenOk++; else s.chatOk++; } else s.denied++;\n  s.tokens += total;\n  s.lastSeen = iso;\n  if (l.page && l.status === 200 && (s.pages[l.page] || Object.keys(s.pages).length < 50)) s.pages[l.page] = (s.pages[l.page] || 0) + 1;\n  const dd = s.days[dayKey] = s.days[dayKey] || { chat: 0, tokens: 0 };\n  if (l.endpoint === 'chat' && l.status === 200) dd.chat++;\n  dd.tokens += total;\n  const dks = Object.keys(s.days).sort();\n  while (dks.length > 35) delete s.days[dks.shift()];\n\n  // Log chi tiết (vòng đệm)\n  sd.logs = sd.logs || [];\n  sd.logs.push({\n    ts: iso, endpoint: l.endpoint, site: l.site, page: l.page, uid: l.uid, status: l.status, reason: l.reason,\n    ip: l.ip, mode: l.mode || '', rawOrigin: l.rawOrigin || '', refOrigin: l.refOrigin || '', model: l.model || '', tokens: total, ms: l.latencyMs || 0, msgLen: l.msgLen || 0\n  });\n  const keep = Math.max(50, Number(cfg.logKeep) || 300);\n  if (sd.logs.length > keep) sd.logs.splice(0, sd.logs.length - keep);\n}\nreturn [{ json: j }];\n"
+      },
+      "id": "576834f1-5f36-4c40-ae19-f5d417f6e33b",
+      "name": "Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "={{ $json.corsOrigin || 'null' }}"
+              },
+              {
+                "name": "Vary",
+                "value": "Origin"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "539787d0-af8a-4f9d-b788-006cfdd59bf9",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "**ACDI AI Gateway (n8n thuần, không Firestore)**\n\n1. Credentials → Header Auth tên `LLM API Key`: Name `Authorization`, Value `Bearer <key>`; gán cho LLM 1/2/3.\n2. Sửa cấu hình trong node *Config* (origin, giới hạn, adminKey).\n3. Bật (Active/Publish). URL: /webhook/acdi-gw-token, /acdi-gw-chat, /acdi-gw-admin.\n\nKhông dán API key vào code.",
+        "height": 260,
+        "width": 520
+      },
+      "id": "3db2308f-a83d-4b4f-a711-4c1906dd3bb7",
+      "name": "Ghi chú",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -140
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Token": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Chat": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Admin": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Is Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Token?": {
+      "main": [
+        [
+          {
+            "node": "Token Parse",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Chat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Chat?": {
+      "main": [
+        [
+          {
+            "node": "Chat Gate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Parse": {
+      "main": [
+        [
+          {
+            "node": "Token OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token OK?": {
+      "main": [
+        [
+          {
+            "node": "Verify ID Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify ID Token": {
+      "main": [
+        [
+          {
+            "node": "Token Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Issue": {
+      "main": [
+        [
+          {
+            "node": "Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Gate": {
+      "main": [
+        [
+          {
+            "node": "Gate OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate OK?": {
+      "main": [
+        [
+          {
+            "node": "LLM 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM 1": {
+      "main": [
+        [
+          {
+            "node": "Retry 1?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry 1?": {
+      "main": [
+        [
+          {
+            "node": "LLM 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM 2": {
+      "main": [
+        [
+          {
+            "node": "Retry 2?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry 2?": {
+      "main": [
+        [
+          {
+            "node": "LLM 3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM 3": {
+      "main": [
+        [
+          {
+            "node": "Format Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reply": {
+      "main": [
+        [
+          {
+            "node": "Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Admin": {
+      "main": [
+        [
+          {
+            "node": "Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": true
+  }
+}

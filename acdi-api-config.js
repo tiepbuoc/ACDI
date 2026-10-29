@@ -1,12 +1,7 @@
 // acdi-api-config.js
-// Cấu hình gọi API AI dùng RIÊNG cho hệ thống ACDI Check (soạn đề + viết nhận xét cá nhân hoá).
-// Tách biệt hoàn toàn khỏi AI SMART (không import từ auth-web.js), để 2 hệ thống độc lập nhau.
-const FIXED_ACDI_API_CONFIG = {
-  endpoint: "https://api.shopaikey.com/v1",
-  model: "gpt-4.1-mini-2025-04-14",
-  apiKey: "sk-4150297863e3eee405805e8609648e6c5cebb1b502ffb46e",
-};
+// Cấu hình kết nối tới ACDI AI Gateway (n8n) — dùng RIÊNG cho ACDI Check, tách biệt với POP-AI.
+// KHÔNG có API key LLM ở đây: key thật chỉ nằm trong Credentials của n8n, system prompt/model do n8n quyết định.
+// Xem n8n/HUONG-DAN-N8N-GATEWAY.md.
 
-export async function getAcdiApiConfig() {
-  return FIXED_ACDI_API_CONFIG;
-}
+// URL gốc của webhook n8n (không có dấu "/" ở cuối).
+export const ACDI_GATEWAY_BASE_URL = "https://n8nhosting-67079049.phoaify.com/webhook";

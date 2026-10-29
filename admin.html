@@ -243,7 +243,11 @@ function unlockAdmin() {
 }
 
 loginBtn.onclick = () => {
-  if (pwInput.value === ADMIN_PASSWORD) { unlockAdmin(); return; }
+  if (pwInput.value === ADMIN_PASSWORD) {
+    // Giữ mật khẩu trong phiên để gửi kèm khi soạn đề bằng AI — n8n kiểm tra lại ở phía server.
+    try { sessionStorage.setItem("acdi_admin_pw", pwInput.value); } catch { /* ignore */ }
+    unlockAdmin(); return;
+  }
   loginMsg.textContent = "Sai mật khẩu.";
 };
 pwInput.addEventListener("keydown", (e) => { if (e.key === "Enter") loginBtn.click(); });

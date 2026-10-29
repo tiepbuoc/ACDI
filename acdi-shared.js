@@ -28,23 +28,10 @@ import { acdiDb as db } from "./acdi-firebase-config.js";
 import {
   collection, addDoc, getDocs, getDoc, doc, setDoc, deleteDoc, query, orderBy, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getAcdiApiConfig } from "./acdi-api-config.js";
+import { askAcdiGateway } from "./acdi-gateway.js";
 
-// ============ HÀM GỌI API AI (độc lập với AI SMART) ============
-async function callAiApi({ endpoint, apiKey, model, messages, maxTokens = 6543 }) {
-  const cleanEndpoint = endpoint.trim().replace(/\/$/, "");
-  const res = await fetch(`${cleanEndpoint}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`HTTP ${res.status}: ${errText}`);
-  }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
-}
+// ============ GỌI AI QUA ACDI AI GATEWAY (n8n) ============
+// Không còn API key/endpoint trong trình duyệt; prompt do n8n dựng. Xem acdi-gateway.js.
 
 // ============ 0. THANG LIKERT DÙNG CHUNG ============
 export const LIKERT_OPTIONS = [
@@ -212,7 +199,7 @@ export function computeQuestionnaireScore(dimensionScores) {
 
 // ============ 2. CHẤM ĐIỂM TÌNH HUỐNG (tự luận) — HOÀN TOÀN BẰNG CÔNG THỨC CỐ ĐỊNH ============
 // KHÔNG gọi AI lúc học sinh nộp bài. Mỗi tình huống đã được AI soạn kèm "đáp án"/rubric
-// (keyPoints + riskKeywords) NGAY LÚC TẠO ĐỀ (xem GENERATION_INSTRUCTION_TEMPLATE mục 5) — rubric
+// (keyPoints + riskKeywords) NGAY LÚC TẠO ĐỀ (xem node "Chat Gate" trong n8n/acdi-gateway.json, mode generate_test) — rubric
 // đó được lưu cùng đề trong ngân hàng đề Firestore (acdiTestBank/{grade}_{subject}), nên việc chấm điểm về sau chỉ là
 // logic JS thuần: luôn ra cùng một kết quả cho cùng một câu trả lời, kiểm tra lại được, không phụ
 // thuộc việc gọi AI lúc chấm có ổn định hay không.
@@ -376,61 +363,19 @@ function scenarioCategoryLabel(title) {
 }
 
 export async function generateFeedbackWithAI({ info, groups, scenarios, perScenario, dimensionScores, questionnaireScore, scenarioScore, acdiScore, level, rec }) {
-  const li = LEVEL_INFO[level];
-  // KHÔNG đưa nhãn kỹ thuật kiểu "(key:xxx)" vào đây — nếu có, AI hay chép nguyên xi kiểu nhãn đó vào
-  // câu trả lời cho người dùng, trông rất kỹ thuật/khó hiểu với học sinh. Chỉ đưa tên tiếng Việt + điểm.
-  const groupSummary = groups.map((g) => `- ${g.title}: điểm ${dimensionScores[g.key]}/100`).join("\n");
-  const scenarioSummary = (scenarios || []).map((sc, i) => {
-    const score = perScenario?.[sc.id];
-    return `- Tình huống ${i + 1} (${scenarioCategoryLabel(sc.title)}): độ phù hợp câu trả lời — ${essayFitLabel(score)} (điểm nguy cơ hệ thống đã chấm: ${score ?? "-"}/100)`;
-  }).join("\n");
-
-  const prompt = `Bạn là chuyên gia giáo dục, viết NHẬN XÉT và LỜI KHUYÊN cá nhân hoá cho một học sinh vừa
-làm xong bài khảo sát ACDI Check (đo mức độ lệ thuộc nhận thức vào AI trong học tập).
-
-QUAN TRỌNG: điểm số dưới đây ĐÃ ĐƯỢC HỆ THỐNG CHẤM CỐ ĐỊNH XONG, bạn KHÔNG được thay đổi hay bàn luận
-lại về tính đúng/sai của điểm số. Bạn CŨNG KHÔNG được hỏi lại hay suy đoán về nội dung đề bài/câu trả
-lời cụ thể của học sinh — bạn CHỈ nhận được điểm số và nhãn tổng quát bên dưới, hãy viết nhận xét dựa
-hoàn toàn vào các con số và nhãn đó, không bịa thêm chi tiết nội dung cụ thể nào không có trong dữ liệu.
-
-Thông tin học sinh: cấp học ${info?.schoolLevel === "thpt" ? "THPT" : "THCS"}, khối lớp ${info?.grade}.
-Điểm ACDI tổng: ${acdiScore}/100 — Mức ${level} (${li.title}).
-Điểm thành phần: bảng hỏi tự đánh giá ${Math.round((questionnaireScore ?? 0) * 10) / 10}/100, tình huống tự luận ${Math.round((scenarioScore ?? 0) * 10) / 10}/100.
-
-Điểm 5 nhóm chỉ báo (lĩnh vực):
-${groupSummary}
-
-HỆ THỐNG ĐÃ XÁC ĐỊNH SẴN (bằng công thức, không phải bạn quyết định):
-- Nhóm CÓ NGUY CƠ CAO NHẤT là: "${rec.highestRiskGroup}"
-- Nhóm DUY TRÌ TỐT NHẤT là: "${rec.bestMaintainedGroup}"
-Bạn BẮT BUỘC phải viết "highestRiskComment" về ĐÚNG nhóm "${rec.highestRiskGroup}" và "strengthComment" về
-ĐÚNG nhóm "${rec.bestMaintainedGroup}" nêu trên — KHÔNG được tự chọn nhóm khác để bàn luận, kể cả khi bạn
-thấy một nhóm khác có vẻ đáng chú ý hơn.
-
-Độ phù hợp của từng tình huống tự luận (chỉ là nhãn tổng quát suy ra từ điểm, không phải nội dung gốc):
-${scenarioSummary}
-
-Hãy trả lời CHỈ bằng JSON đúng schema sau, viết bằng tiếng Việt, giọng văn gần gũi, mang tính xây dựng,
-không phán xét, dựa trên các điểm số/nhãn phía trên (không nói chung chung, nhưng cũng không bịa ra chi
-tiết nội dung câu trả lời cụ thể mà bạn không có):
-{
-  "highestRiskComment": "1-2 câu nhận xét cụ thể về nhóm \"${rec.highestRiskGroup}\", dựa trên các câu trả lời liên quan",
-  "strengthComment": "1-2 câu nhận xét về nhóm \"${rec.bestMaintainedGroup}\"",
-  "advice": "2-4 câu lời khuyên cụ thể, khả thi, phù hợp lứa tuổi/khối lớp, giúp học sinh cải thiện nhóm \"${rec.highestRiskGroup}\""
-}
-YÊU CẦU VỀ VĂN PHONG — RẤT QUAN TRỌNG:
-- Viết văn tự nhiên, dễ hiểu với học sinh, gọi tên nhóm CHỈ bằng tên tiếng Việt ở trên (ví dụ: "${rec.highestRiskGroup}").
-- TUYỆT ĐỐI KHÔNG được đưa vào câu trả lời bất kỳ nhãn kỹ thuật/mã nội bộ nào, ví dụ: "key:...", "g1q2",
-  "s3", tên biến, hay số liệu đặt trong ngoặc kiểu "(key:idea=20)". Nếu cần nêu điểm số, chỉ viết dạng
-  văn xuôi bình thường (ví dụ: "điểm 20/100"), không dùng ký hiệu kỹ thuật.
-CHỈ trả về JSON, không kèm giải thích, không markdown, không dấu backtick.`;
+  // Prompt nhận xét nằm ở n8n (phía server). Trình duyệt chỉ gửi ĐIỂM SỐ đã chấm + tên 2 nhóm đã xác định sẵn.
+  const params = {
+    schoolLevel: info?.schoolLevel === "thpt" ? "thpt" : "thcs",
+    grade: String(info?.grade ?? ""),
+    acdiScore, level, questionnaireScore: questionnaireScore ?? 0, scenarioScore: scenarioScore ?? 0,
+    groups: groups.map((g) => ({ title: g.title, score: dimensionScores[g.key] })),
+    scenarios: (scenarios || []).map((sc) => ({ title: sc.title, score: perScenario?.[sc.id] ?? null })),
+    highestRiskGroup: rec.highestRiskGroup,
+    bestMaintainedGroup: rec.bestMaintainedGroup,
+  };
 
   try {
-    const cfg = await getAcdiApiConfig();
-    const raw = await callAiApi({
-      endpoint: cfg.endpoint, apiKey: cfg.apiKey, model: cfg.model,
-      messages: [{ role: "user", content: prompt }], maxTokens: 6543,
-    });
+    const raw = await askAcdiGateway({ mode: "feedback", params, timeoutMs: 60000 });
     const cleaned = String(raw).replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
     if (!parsed || typeof parsed.highestRiskComment !== "string" || typeof parsed.strengthComment !== "string" || typeof parsed.advice !== "string") {
@@ -533,7 +478,7 @@ export async function listTestBankMeta() {
 }
 
 // Soạn 1 đề đầy đủ (25 câu Likert + 5 tình huống tự luận) cho ĐÚNG 1 (khối lớp, môn học) bằng AI —
-// dùng lại đúng prompt/luật soạn đề ở GENERATION_INSTRUCTION_TEMPLATE (chỉ truyền subjects là mảng
+// dùng đúng prompt/luật soạn đề đặt ở n8n (mode generate_test) (chỉ truyền subjects là mảng
 // 1 phần tử). Hàm này CHỈ được gọi từ trang admin.html khi quản trị viên bấm "Tạo nhanh bằng AI" —
 // KHÔNG được gọi tự động lúc học sinh làm khảo sát.
 export async function generateSubjectTestWithAI({ schoolLevel, grade, subject }) {
@@ -613,137 +558,7 @@ export async function assembleTestForProfile({ schoolLevel, grade, subjects }) {
   return { groups: assembledGroups, scenarios: pickedScenarios, source: "bank", subjectsUsed: banks.map((b) => b.subject) };
 }
 
-// ============ 7b. PROMPT SOẠN ĐỀ BẰNG AI (dùng bởi generateSubjectTestWithAI ở admin.html) ============
-const GENERATION_INSTRUCTION_TEMPLATE = (criteria) => `Bạn là chuyên gia thiết kế công cụ đo lường tâm lý giáo dục, được giao soạn MỘT bộ đề ACDI Check
-(đo Chỉ số lệ thuộc nhận thức vào AI của học sinh) phù hợp với nhóm đối tượng sau:
-- Cấp học: ${criteria.schoolLevel === "thpt" ? "Trung học phổ thông (THPT)" : "Trung học cơ sở (THCS)"}
-- Khối lớp: ${criteria.grade}
-- Môn học thường dùng AI: ${(criteria.subjects || []).join(", ") || "không rõ"}
-
-YÊU CẦU BẮT BUỘC — áp dụng GIỐNG NHAU cho MỌI lần soạn đề, không tự thay đổi cấu trúc hay cách hiểu:
-
-1. Soạn đúng 5 NHÓM CHỈ BÁO theo đúng 5 khoá "key" và Ý NGHĨA ĐO LƯỜNG cố định sau (giữ nguyên
-   key, được tự viết lại title/desc/câu hỏi cho phù hợp lứa tuổi và môn học nêu trên):
-   - "start" (Phụ thuộc khi bắt đầu nhiệm vụ): mức độ cần AI để xác định cách làm/khởi động nhiệm vụ.
-   - "idea" (Phụ thuộc về ý tưởng): khả năng tự hình thành ý tưởng, dàn ý, phương án giải quyết.
-   - "process" (Phụ thuộc trong xử lí nhiệm vụ): mức độ giao cho AI phân tích, lập luận, hoàn thành sản phẩm.
-   - "trust" (Phụ thuộc vào kết quả của AI): mức độ tin tưởng, chấp nhận câu trả lời AI mà không kiểm tra.
-   - "independence" (Khả năng hoạt động khi không có AI): khả năng ghi nhớ, giải thích, tự hoàn thành khi không có AI.
-   BẮT BUỘC soạn ĐỦ 25 câu (5 nhóm × 5 câu), TOÀN BỘ do bạn tự viết — không được bỏ trống hay rút gọn.
-   PHÂN BỐ NỘI DUNG ĐỀU trong từng nhóm: 5 câu của MỘT nhóm phải đo 5 KHÍA CẠNH KHÁC NHAU của cùng
-   một chỉ báo (không được viết 5 câu gần như lặp lại cùng một ý), để điểm trung bình của nhóm phản
-   ánh đúng nhiều mặt của hành vi, không bị lệch vì phần lớn câu hỏi trùng ý nhau.
-2. Mỗi nhóm có đúng 5 câu hỏi kiểu Likert 5 mức (từ "Hoàn toàn không đúng" đến "Hoàn toàn đúng"),
-   mỗi câu có "id" duy nhất dạng "g{số nhóm 1-5}q{số câu 1-5}" (ví dụ g1q1..g1q5, g2q1..g2q5,...).
-3. Trường "reverse" — ĐÂY LÀ CHỖ DỄ SAI NHẤT, PHẢI TỰ KIỂM TRA LẠI TỪNG CÂU TRƯỚC KHI TRẢ VỀ:
-   - Mặc định "reverse: false" cho 4 nhóm đầu ("start","idea","process","trust") — NGHĨA LÀ mọi câu
-     hỏi trong 4 nhóm này BẮT BUỘC phải viết theo hướng "câu đồng ý (chọn mức cao) = lệ thuộc AI
-     NHIỀU HƠN". TUYỆT ĐỐI KHÔNG được viết một câu theo hướng ngược lại (ví dụ ca ngợi sự độc lập,
-     "tôi tự nghĩ ra ý tưởng trước khi hỏi AI") rồi vẫn để reverse:false — làm vậy học sinh trả lời
-     tốt (độc lập) sẽ bị chấm nhầm thành lệ thuộc cao, khiến điểm nhóm đó luôn bị đẩy lên rất cao
-     một cách SAI LỆCH. Nếu bạn thấy một câu tự nhiên phải viết theo hướng độc lập, hãy VIẾT LẠI câu
-     đó theo hướng lệ thuộc (ví dụ đổi thành "tôi khó tự nghĩ ra ý tưởng nếu chưa hỏi AI") thay vì đặt
-     reverse:true cho nhóm này.
-   - "reverse: true" CHỈ dùng cho TẤT CẢ 5 câu của nhóm "independence" (vì nhóm này đo năng lực độc
-     lập, Likert càng cao thì càng ÍT lệ thuộc).
-   - Trước khi trả JSON, tự rà soát: với mỗi câu reverse:false, "chọn mức 5 (Hoàn toàn đúng)" có
-     đúng nghĩa là "lệ thuộc AI nhiều nhất" không? Nếu không đúng, phải sửa lại cách diễn đạt câu đó.
-4. Có thể lồng ví dụ, ngữ cảnh gắn với môn học/khối lớp nêu trên để học sinh dễ liên hệ, nhưng Ý NGHĨA
-   ĐO LƯỜNG của mỗi nhóm phải giữ đúng như mô tả ở trên — không được tạo câu hỏi đo sai nhóm.
-5. Soạn đúng 5 TÌNH HUỐNG TỰ LUẬN, id lần lượt "s1".."s5", TẤT CẢ đều type "text" (không dùng
-   type "choice" hay "number" nữa) — mỗi tình huống yêu cầu học sinh TỰ VIẾT câu trả lời bằng lời
-   của mình (không phải chọn đáp án có sẵn), để đánh giá đúng khả năng tư duy độc lập thay vì đoán:
-   - s1: một câu trả lời của AI có chứa LỖI (nội dung liên quan môn học nêu trên nếu hợp lý, trong
-     trường "aiAnswer"); yêu cầu học sinh chỉ ra lỗi đó là gì và sửa lại cho đúng bằng lời của mình.
-   - s2: tình huống cần kiểm chứng một thông tin AI đưa ra; yêu cầu học sinh nêu cách/nguồn mình sẽ
-     dùng để kiểm chứng và giải thích ngắn gọn vì sao.
-   - s3: có "aiAnswer" là một đoạn AI giải thích một khái niệm liên quan môn học nêu trên (3-4 câu);
-     yêu cầu học sinh viết lại cách hiểu bằng lời riêng của mình (không được chép lại nguyên văn).
-   - s4: một tình huống/bài tập nhỏ liên quan môn học, yêu cầu học sinh tự trình bày CÁCH LÀM (các
-     bước suy luận) của mình, không chỉ đưa ra đáp số.
-   - s5: một bài toán/câu hỏi áp dụng ngắn, KHÔNG dùng AI/máy tính/tra cứu, yêu cầu học sinh tự giải
-     và trình bày lại cách giải bằng lời.
-   ĐỘ KHÓ của nội dung s1-s5 phải tăng dần theo khối lớp đã cho ở trên (nội dung dành cho lớp 12 phải
-   khó/nâng cao hơn một chút so với nội dung cùng dạng dành cho lớp 10, và khó hơn khối THCS); vẫn phải
-   phù hợp môn học nêu trên và vừa sức để học sinh khối lớp đó có thể tự làm được nếu không dùng AI.
-
-   MỖI tình huống BẮT BUỘC phải có kèm "đáp án"/rubric để HỆ THỐNG (không phải AI) tự động chấm điểm
-   NGUY CƠ LỆ THUỘC AI (0-100, càng cao càng đáng lo) khi học sinh nộp bài sau này, gồm 2 trường:
-   - "keyPoints": mảng 2-4 ý CHÍNH mà một câu trả lời TỐT (hiểu đúng, tự lập luận được) cần thể hiện.
-     Mỗi phần tử có dạng { "label": "mô tả ngắn ý đó", "keywords": [ 3-6 từ/cụm từ tiếng Việt, không
-     dấu câu, là các từ khoá/đồng nghĩa mà một câu trả lời đúng thường sẽ chứa MỘT TRONG SỐ ĐÓ ] }.
-   - "riskKeywords": mảng 3-6 cụm từ/từ khoá (chuỗi ngắn) cho thấy dấu hiệu RỦI RO cao khi xuất hiện
-     trong câu trả lời của học sinh — ví dụ thể hiện học sinh không tự hiểu, chỉ đoán, dựa hẳn vào AI,
-     hoặc trả lời cho có (ví dụ: "không biết", "AI nói vậy", "chắc là đúng", "em không rõ", "copy").
-6. CÂN BẰNG ĐỘ RỘNG CỦA THANG ĐIỂM — RẤT QUAN TRỌNG: hệ thống chấm điểm tự luận (thuần công thức
-   JS, không dùng AI) tính điểm nguy cơ theo TỈ LỆ số "keyPoints" mà học sinh nhắc trúng. Nếu bạn
-   viết các "keyPoints" quá tổng quát, quá dễ đoán trúng bằng bất kỳ câu trả lời chung chung nào,
-   MỌI học sinh (kể cả học sinh không thực sự hiểu bài) đều sẽ vô tình đạt điểm thấp giả tạo; ngược
-   lại nếu "keyPoints"/"keywords" quá hẹp, quá khó đoán trúng đúng từ, học sinh hiểu bài thật cũng
-   không đạt điểm cao (điểm nguy cơ thấp) được. Để điểm số phản ánh ĐÚNG và CÔNG BẰNG sự đa dạng
-   thực tế của câu trả lời học sinh (bao gồm cả trường hợp học sinh xuất sắc lẫn học sinh gần như
-   không tự làm), khi soạn "keyPoints" và "riskKeywords" hãy:
-   - Chọn keyPoints là những Ý THỰC SỰ CẦN HIỂU BÀI mới nêu được (không phải từ ngữ ai cũng đoán ra).
-   - Với mỗi keyPoint, liệt kê đủ 3-6 từ khoá/đồng nghĩa THƯỜNG GẶP trong cách học sinh diễn đạt
-     (kể cả cách viết tắt, viết sai chính tả nhẹ, từ đồng nghĩa) để không bỏ sót câu trả lời đúng
-     nhưng diễn đạt khác, đồng thời không quá rộng khiến câu trả lời sai cũng khớp được.
-   - riskKeywords nên bao phủ cả cách nói lười biếng/qua loa phổ biến ở lứa tuổi này (ví dụ dạng
-     "không biết", "chắc vậy", "AI nói đúng mà", "khỏi cần kiểm tra") lẫn dấu hiệu sao chép nguyên
-     văn không đổi.
-   Làm đúng như trên thì công thức chấm điểm tự nó đã có thể cho ra điểm trải dài toàn thang 0-100
-   tuỳ chất lượng câu trả lời thực tế — kể cả các trường hợp cực trị (dưới 10 với câu trả lời xuất
-   sắc, tự lập luận đầy đủ; trên 90 với câu trả lời hời hợt/sao chép) — bạn KHÔNG cần và KHÔNG được
-   tự ý "nới lỏng" hay "siết chặt" giả tạo để cố tạo ra điểm cực trị; chỉ cần rubric phản ánh đúng
-   thực chất là công thức sẽ tự cho kết quả công bằng.
-
-7. VÍ DỤ MẪU (chỉ để bạn tham khảo văn phong, độ chi tiết và cách soạn rubric — KHÔNG được chép lại
-   nguyên văn nội dung ví dụ này vào đề bạn soạn, phải tự viết nội dung mới phù hợp với cấp học/khối
-   lớp/môn học đã cho ở trên):
-
-   Ví dụ 1 nhóm chỉ báo (nhóm "start"):
-   {
-     "key": "start", "title": "Phụ thuộc khi bắt đầu nhiệm vụ",
-     "desc": "Mức độ em cần AI để xác định cách làm hoặc khởi động một nhiệm vụ.",
-     "questions": [
-       { "id": "g1q1", "text": "Khi nhận một bài tập Hoá mới, em thường mở AI hỏi cách làm trước khi tự đọc kỹ đề.", "reverse": false },
-       { "id": "g1q2", "text": "Em khó hình dung nên bắt đầu từ đâu nếu chưa có AI gợi ý hướng làm.", "reverse": false },
-       { "id": "g1q3", "text": "Em thường chờ AI đưa ra các bước giải trước rồi mới bắt tay vào làm theo.", "reverse": false },
-       { "id": "g1q4", "text": "Em cảm thấy khá lo lắng nếu phải tự mở đầu một bài tập mà không có AI hỗ trợ.", "reverse": false },
-       { "id": "g1q5", "text": "Em ít khi dành thời gian đọc kỹ đề bài trước khi mở công cụ AI ra hỏi.", "reverse": false }
-     ]
-   }
-
-   Ví dụ 1 tình huống tự luận (dạng s1 — phát hiện lỗi):
-   {
-     "id": "s1", "title": "Tình huống 1 · Phát hiện lỗi trong câu trả lời AI",
-     "prompt": "AI trả lời câu hỏi \\"Tính nồng độ mol của dung dịch chứa 0,5 mol NaCl trong 2 lít nước\\" như sau:",
-     "aiAnswer": "\\"Nồng độ mol là 0,5 x 2 = 1 mol/l.\\"",
-     "question": "Câu trả lời trên có lỗi gì? Hãy chỉ ra lỗi và tính lại cho đúng bằng lời của em.",
-     "type": "text",
-     "keyPoints": [
-       { "label": "Chỉ ra phép tính sai (phải chia, không phải nhân)", "keywords": ["chia", "phép chia", "không phải nhân", "0,5 chia 2", "0.5 chia 2"] },
-       { "label": "Đưa ra đáp số đúng 0,25 mol/l", "keywords": ["0,25", "0.25"] }
-     ],
-     "riskKeywords": ["không biết", "em không rõ", "chắc là đúng", "ai nói vậy", "đúng rồi", "không có lỗi"]
-   }
-
-8. CHỈ trả về JSON hợp lệ đúng schema bên dưới. TUYỆT ĐỐI không kèm giải thích, không markdown,
-   không dấu backtick, không có chữ nào ngoài JSON.
-
-SCHEMA JSON:
-{
-  "groups": [
-    { "key": "start", "title": "...", "desc": "...", "questions": [ { "id": "g1q1", "text": "...", "reverse": false }, ... đúng 5 câu ... ] },
-    ... đúng 5 nhóm theo thứ tự start, idea, process, trust, independence ...
-  ],
-  "scenarios": [
-    { "id": "s1", "title": "...", "prompt": "...", "aiAnswer": "...", "question": "...", "type": "text",
-      "keyPoints": [ { "label": "...", "keywords": ["...", "..."] }, ... 2-4 ý ... ],
-      "riskKeywords": ["...", "...", "..."] },
-    ... đúng 5 tình huống s1..s5, TẤT CẢ type "text", đều có "keyPoints" và "riskKeywords" như trên
-    ("aiAnswer" chỉ bắt buộc với s1 và s3, các tình huống khác có thể bỏ trường này nếu không cần) ...
-  ]
-}`;
+// ============ 7b. SOẠN ĐỀ BẰNG AI (prompt nằm ở n8n — node "Chat Gate", mode generate_test) ============
 
 export function validateGeneratedTest(data) {
   if (!data || !Array.isArray(data.groups) || !Array.isArray(data.scenarios)) return false;
@@ -775,11 +590,14 @@ export function validateGeneratedTest(data) {
 // thiếu trường), và hệ thống sẽ ÂM THẦM rơi về DEFAULT_ACDI_GROUPS/DEFAULT_SCENARIOS (bộ đề mặc định
 // cứng trong code) — đây chính là nguyên nhân hay gặp khi thấy đề luôn giống nhau/đơn giản bất thường.
 export async function generateTestWithAI(criteria) {
-  const cfg = await getAcdiApiConfig();
-  const raw = await callAiApi({
-    endpoint: cfg.endpoint, apiKey: cfg.apiKey, model: cfg.model,
-    messages: [{ role: "user", content: GENERATION_INSTRUCTION_TEMPLATE(criteria) }],
-    maxTokens: 8000,
+  // Prompt soạn đề nằm ở n8n (phía server). Cần mật khẩu admin (lưu tạm trong sessionStorage khi mở khoá admin.html).
+  let adminSecret = "";
+  try { adminSecret = sessionStorage.getItem("acdi_admin_pw") || ""; } catch { adminSecret = ""; }
+  const raw = await askAcdiGateway({
+    mode: "generate_test",
+    params: { schoolLevel: criteria.schoolLevel, grade: String(criteria.grade), subjects: criteria.subjects || [] },
+    adminSecret,
+    timeoutMs: 120000,
   });
   const cleaned = String(raw).replace(/```json|```/g, "").trim();
   let parsed;

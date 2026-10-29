@@ -3,6 +3,7 @@
 // (AI SMART Chatbot / Learning Passport dùng project Firebase khác, xem firebase-config.js).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const acdiFirebaseConfig = {
   apiKey: "AIzaSyB8_X3krCKbzVoNEUraLEMYX48DYNjTvWk",
@@ -16,3 +17,5 @@ const acdiFirebaseConfig = {
 
 export const acdiApp = initializeApp(acdiFirebaseConfig, "acdi");
 export const acdiDb = getFirestore(acdiApp);
+// Auth chỉ dùng để tạo phiên ẨN DANH (Anonymous) xin token gọi ACDI AI Gateway (n8n) — học sinh vẫn không cần đăng nhập.
+export const acdiAuth = getAuth(acdiApp);
